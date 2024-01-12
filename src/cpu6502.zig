@@ -116,7 +116,7 @@ pub const CPU = struct {
         self.pc += 1;
         const hi: u16 = self.bus.read(self.pc);
         self.pc += 1;
-        const addr = ((hi << 8) | lo) + self.x;
+        const addr = ((hi << 8) | lo) +% self.x;
         return AMRes{
             .res = 0,
             .addr = addr,
@@ -129,7 +129,7 @@ pub const CPU = struct {
         self.pc += 1;
         const hi: u16 = self.bus.read(self.pc);
         self.pc += 1;
-        const addr = ((hi << 8) | lo) + self.y;
+        const addr = ((hi << 8) | lo) +% self.y;
         return AMRes{
             .addr = addr,
             .res = 0,
@@ -145,7 +145,7 @@ pub const CPU = struct {
         self.pc += 1;
         const addr = (hi << 8) | lo;
         const final_addr_lo = self.bus.read(addr);
-        const final_addr_hi: u16 = self.bus.read(addr + 1);
+        const final_addr_hi: u16 = if (lo == 0xFF) self.bus.read(addr & 0xFF00) else self.bus.read(addr + 1);
         const final_addr = (final_addr_hi << 8) | final_addr_lo;
         return AMRes{
             .addr = final_addr,
@@ -498,7 +498,7 @@ pub const CPU = struct {
         Absolute,
         Relative,
         ZeroPageX,
-        None2,
+        Indirect,
         AbsoluteX,
     };
 
@@ -587,7 +587,7 @@ pub const CPU = struct {
             if (self.pc == 0xFFFA) {
                 break;
             }
-            std.debug.print("Next: {x} {x} {x}\n", .{ self.bus.read(self.pc + 1), self.bus.read(self.pc + 2), self.bus.read(self.pc + 3) });
+            // std.debug.print("Next: {x} {x} {x} {x}\n", .{ self.bus.read(self.pc + 1), self.bus.read(self.pc + 2), self.bus.read(self.pc + 3), self.bus.read(self.pc + 4) });
             const instruction = self.bus.read(self.pc);
             std.debug.print("{x:4} {x:2} ", .{ self.pc, instruction });
             self.pc += 1;
@@ -689,7 +689,7 @@ pub const CPU = struct {
                         },
                         0x20 => { // JSR
                             const am_res = self.AM_Absolute();
-                            self.logDbg("JSR", addr_mode, am_res, g3_addr_mode_tag);
+                            self.logDbg("JSR", 3, am_res, g3_addr_mode_tag);
                             self.pc -= 1;
                             const hi: u8 = @truncate(self.pc >> 8);
                             self.bus.write(self.getStackAddr(0), hi);
@@ -840,7 +840,7 @@ pub const CPU = struct {
                                     wait_cycle = 2;
                                 }
                             } else {
-                                self.logDbg(g3_instruction_str[op_code], addr_mode, am_res, g3_addr_mode_tag);
+                                self.logDbg(g3_instruction_str[op_code], if (instruction == 0x6C) 6 else addr_mode, am_res, g3_addr_mode_tag);
                                 wait_cycle = g3_instruction[op_code](self, addr_mode, am_res) + am_res.additionalCycle;
                             }
                         },

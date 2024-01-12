@@ -49,6 +49,6 @@ fn cpu_test_all() !void {
     var prog_rom = test_rom.getProgramRomDev();
     try bus.register(&prog_rom);
     var cpu = CPU{ .bus = bus, .pc = 0xC000, .sp = 0xFF };
-    try cpu.exec(0x4000);
+    try cpu.exec(0xA000);
     std.log.warn("0x02 0x03 {x}{x}", .{ bus.read(0x02), bus.read(0x03) });
 }

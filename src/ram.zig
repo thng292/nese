@@ -17,9 +17,9 @@ pub const RAM = struct {
     }
 
     pub fn write(self: *RAM, addr: u16, data: u8) void {
-        if (getAddr(addr) <= 0xFF) {
-            std.debug.print("0x{x} = {x:2}\n", .{ getAddr(addr), data });
-        }
+        // if (getAddr(addr) <= 0xFF) {
+        //     std.debug.print("0x{x} = {x:2}\n", .{ getAddr(addr), data });
+        // }
         self.data[getAddr(addr)] = data;
     }
 };
