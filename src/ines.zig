@@ -67,7 +67,7 @@ pub const Header = packed struct(u128) {
             res |= self.CHR_ROM_Size;
             return res;
         } else {
-            return @as(u32, @intCast(self.CHR_ROM_Size)) * 8 * 1024;
+            return @max(@as(u32, @intCast(self.CHR_ROM_Size)), 1) * 8 * 1024;
         }
     }
 

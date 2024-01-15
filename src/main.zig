@@ -2,9 +2,47 @@ const std = @import("std");
 const Bus = @import("bus.zig").Bus;
 const CPU = @import("cpu6502.zig").CPU;
 const simple_prog = @import("cpu6502.zig").simple_prog;
+const sdl = @import("zsdl");
 
 pub fn main() !void {
-    return cpu_test_all();
+    try sdl.init(.{ .audio = true, .video = true });
+    defer sdl.quit();
+    const window = try sdl.Window.create(
+        "zig-gamedev-window",
+        sdl.Window.pos_undefined,
+        sdl.Window.pos_undefined,
+        600,
+        600,
+        .{ .opengl = true, .allow_highdpi = true },
+    );
+    defer window.destroy();
+    const renderer = try sdl.Renderer.create(window, -1, .{
+        .accelerated = false,
+        .present_vsync = false,
+    });
+
+    while (true) {
+        var event = std.mem.zeroes(sdl.Event);
+
+        while (sdl.pollEvent(&event)) {
+            switch (event.type) {
+                sdl.EventType.quit => {
+                    return;
+                },
+                else => {},
+            }
+        }
+
+        try renderer.setDrawColor(.{
+            .r = 255,
+            .g = 0,
+            .b = 0,
+            .a = 100,
+        });
+        try renderer.clear();
+        renderer.present();
+        sdl.delay(16);
+    }
 }
 
 fn cpu_test() !void {
