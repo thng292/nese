@@ -10,6 +10,7 @@ pub const CPU = struct {
     pc: u16 = 0,
     sp: u8 = 0xFF,
     status: CPUStatus = CPUStatus{},
+    wait_cycle: u8 = 0,
 
     const CPUStatus = packed struct(u8) {
         negative: u1 = 0,
@@ -48,6 +49,16 @@ pub const CPU = struct {
         addr: u16 = 0,
         additionalCycle: u8 = 0,
     };
+
+    fn MNI(self: *CPU) void {
+        self.bus.write(self.getStackAddr(0), @bitCast(self.status));
+        self.bus.write(self.getStackAddr(-1), @truncate(self.pc));
+        self.bus.write(self.getStackAddr(-2), @truncate(self.pc >> 8));
+        self.sp -= 3;
+        var nmi_handler_addr: u16 = self.bus.read(0xFFFA);
+        nmi_handler_addr |= self.bus.read(0xFFFB) << 8;
+        self.pc = nmi_handler_addr;
+    }
 
     fn AM_Implied(self: *CPU) AMRes {
         return AMRes{ .res = self.a, .addr = 0, .additionalCycle = 0 };
@@ -567,287 +578,287 @@ pub const CPU = struct {
         self.status.negative = if (stuff.* >> 7 != 0) 1 else 0;
     }
 
-    fn wait() void {}
+    pub fn step(self: *CPU) !void {
+        if (self.wait_cycle != 0) {
+            self.wait_cycle -= 1;
+            return;
+        }
+        if (self.pc == 0xFFFA) {
+            return;
+        }
+        // std.debug.print("Next: {x} {x} {x} {x}\n", .{ self.bus.read(self.pc + 1), self.bus.read(self.pc + 2), self.bus.read(self.pc + 3), self.bus.read(self.pc + 4) });
+        const instruction = self.bus.read(self.pc);
+        std.debug.print("{x:4} {x:2} ", .{ self.pc, instruction });
+        self.pc += 1;
+        const group = instruction & 3;
+        const op_code = (instruction & 0b11100000) >> 5;
+        const addr_mode = (instruction & 0b11100) >> 2;
+        switch (group) {
+            // Group 1
+            0b01 => {
+                const am_res = g1_addr_mode[addr_mode](self);
+                const g1_instruction = [8](*const fn (*CPU, u8, AMRes) u8){
+                    CPU.ORA, CPU.AND, CPU.EOR, CPU.ADC, CPU.STA, CPU.LDA, CPU.CMP, CPU.SBC,
+                };
+                const g1_instruction_str = [_][]const u8{
+                    "ORA", "AND", "EOR", "ADC", "STA", "LDA", "CMP", "SBC",
+                };
+                self.logDbg(g1_instruction_str[op_code], addr_mode, am_res, g1_addr_mode_tag);
+                self.wait_cycle = g1_instruction[op_code](self, addr_mode, am_res) + am_res.additionalCycle;
+            },
+            // Group 2
+            0b10 => {
+                var am_res: AMRes = undefined;
+                if (op_code == 4 or op_code == 5) { // LDX and STX exception
+                    if (addr_mode == 5) {
+                        am_res = self.AM_ZeroPageY();
+                    }
+                    if (addr_mode == 7) {
+                        am_res = self.AM_AbsoluteY();
+                    }
+                    am_res = g2_addr_mode[addr_mode](self);
+                } else {
+                    am_res = g2_addr_mode[addr_mode](self);
+                }
+                const g2_instruction = [8](*const fn (*CPU, u8, AMRes) u8){
+                    CPU.ASL, CPU.ROL, CPU.LSR, CPU.ROR, CPU.STX, CPU.LDX, CPU.DEC, CPU.INC,
+                };
+                const g2_instruction_str = [_][]const u8{
+                    "ASL", "ROL", "LSR", "ROR", "STX", "LDX", "DEC", "INC",
+                };
+                switch (instruction) {
+                    0x8A => { // TXA
+                        self.logDbg("TXA", addr_mode, am_res, g2_addr_mode_tag);
+                        self.a = self.x;
+                        self.status.zero = if (self.a == 0) 1 else 0;
+                        self.status.negative = if (self.a >> 7 != 0) 1 else 0;
+                        self.wait_cycle = 2;
+                    },
+                    0x9A => { // TXS
+                        self.logDbg("TXS", addr_mode, am_res, g2_addr_mode_tag);
+                        self.sp = self.x;
+                        self.wait_cycle = 2;
+                    },
+                    0xAA => { // TAX
+                        self.logDbg("TAX", addr_mode, am_res, g2_addr_mode_tag);
+                        self.x = self.a;
+                        self.status.zero = if (self.a == 0) 1 else 0;
+                        self.status.negative = if (self.a >> 7 != 0) 1 else 0;
+                        self.wait_cycle = 2;
+                    },
+                    0xBA => { // TSX
+                        self.logDbg("TSX", addr_mode, am_res, g2_addr_mode_tag);
+                        self.x = self.sp;
+                        self.status.zero = if (self.x == 0) 1 else 0;
+                        self.status.negative = if (self.x >> 7 != 0) 1 else 0;
+                        self.wait_cycle = 2;
+                    },
+                    0xCA => { // DEX
+                        self.logDbg("DEX", addr_mode, am_res, g2_addr_mode_tag);
+                        self.DEStuff(&self.x);
+                        self.wait_cycle = 2;
+                    },
+                    0xEA => { // NOP
+                        self.logDbg("NOP", addr_mode, am_res, g2_addr_mode_tag);
+                        self.wait_cycle = 2;
+                    },
+                    else => {
+                        self.logDbg(g2_instruction_str[op_code], addr_mode, am_res, g2_addr_mode_tag);
+                        self.wait_cycle = g2_instruction[op_code](self, addr_mode, am_res) + am_res.additionalCycle;
+                    },
+                }
+            },
+            // Group 3
+            0b00 => {
+                switch (instruction) {
+                    0x00 => { // BRK is a 2-byte opcode
+                        self.logDbg("BRK", 2, AMRes{}, g3_addr_mode_tag);
+                        const padding = self.bus.read(self.pc);
+                        _ = padding;
+                        self.pc += 1;
+                        self.status.breakCommand = 1;
+                        self.bus.write(self.getStackAddr(0), @bitCast(self.status));
+                        const hi: u8 = @truncate(self.pc >> 8);
+                        self.bus.write(self.getStackAddr(-1), hi);
+                        const lo: u8 = @truncate(self.pc);
+                        self.bus.write(self.getStackAddr(-2), lo);
+                        self.sp -%= 3;
+                        self.pc = @as(u16, @intCast(self.bus.read(0xFFFF))) << 8 | self.bus.read(0xFFFE);
+                        self.wait_cycle = 7;
+                    },
+                    0x20 => { // JSR
+                        const am_res = self.AM_Absolute();
+                        self.logDbg("JSR", 3, am_res, g3_addr_mode_tag);
+                        self.pc -= 1;
+                        const hi: u8 = @truncate(self.pc >> 8);
+                        self.bus.write(self.getStackAddr(0), hi);
+                        const lo: u8 = @truncate(self.pc);
+                        self.bus.write(self.getStackAddr(-1), lo);
+                        self.sp -%= 2;
+                        self.pc = am_res.addr;
+                        self.wait_cycle = 6;
+                    },
+                    0x40 => { // RTI
+                        self.logDbg("RTI", 2, AMRes{}, g3_addr_mode_tag);
+                        self.sp +%= 1;
+                        self.status = @bitCast(self.bus.read(self.getStackAddr(0)));
+                        const pc_lo = self.bus.read(self.getStackAddr(1));
+                        const pc_hi: u16 = self.bus.read(self.getStackAddr(2));
+                        self.sp +%= 2;
+                        self.pc = pc_hi << 8 | pc_lo;
+                        self.wait_cycle = 6;
+                    },
+                    0x60 => { // RTS
+                        self.logDbg("RTS", 2, AMRes{}, g3_addr_mode_tag);
+                        self.sp +%= 1;
+                        const pc_lo = self.bus.read(self.getStackAddr(0));
+                        const pc_hi: u16 = self.bus.read(self.getStackAddr(1));
+                        self.sp +%= 1;
+                        self.pc = (pc_hi << 8 | pc_lo) + 1;
+                        self.wait_cycle = 6;
+                    },
+                    0x08 => { // PHP not the language
+                        self.logDbg("PHP", 2, AMRes{}, g3_addr_mode_tag);
+                        self.bus.write(self.getStackAddr(0), @bitCast(self.status));
+                        self.sp -%= 1;
+                        self.wait_cycle = 3;
+                    },
+                    0x18 => { // CLC
+                        self.logDbg("CLC", 2, AMRes{}, g3_addr_mode_tag);
+                        self.status.carry = 0;
+                        self.wait_cycle = 2;
+                    },
+                    0x28 => { // PLP
+                        self.logDbg("PLP", 2, AMRes{}, g3_addr_mode_tag);
+                        self.sp +%= 1;
+                        self.status = @bitCast(self.bus.read(self.getStackAddr(0)));
+                        self.wait_cycle = 4;
+                    },
+                    0x38 => { // SEC
+                        self.logDbg("SEC", 2, AMRes{}, g3_addr_mode_tag);
+                        self.status.carry = 1;
+                        self.wait_cycle = 2;
+                    },
+                    0x48 => { // PHA
+                        self.logDbg("PHA", 2, AMRes{}, g3_addr_mode_tag);
+                        self.bus.write(self.getStackAddr(0), self.a);
+                        self.sp -%= 1;
+                        self.wait_cycle = 3;
+                    },
+                    0x58 => { // CLI
+                        self.logDbg("CLI", 2, AMRes{}, g3_addr_mode_tag);
+                        self.status.interruptDisable = 0;
+                        self.wait_cycle = 2;
+                    },
+                    0x68 => { // PLA
+                        self.logDbg("PLA", 2, AMRes{}, g3_addr_mode_tag);
+                        self.sp +%= 1;
+                        self.a = self.bus.read(self.getStackAddr(0));
+                        self.status.zero = if (self.a == 0) 1 else 0;
+                        self.status.negative = if (self.a >> 7 != 0) 1 else 0;
+                        self.wait_cycle = 4;
+                    },
+                    0x78 => { // SEI
+                        self.logDbg("SEI", 2, AMRes{}, g3_addr_mode_tag);
+                        self.status.interruptDisable = 1;
+                        self.wait_cycle = 2;
+                    },
+                    0x88 => { // DEY
+                        self.logDbg("DEY", 2, AMRes{}, g3_addr_mode_tag);
+                        self.DEStuff(&self.y);
+                        self.wait_cycle = 2;
+                    },
+                    0x98 => { // TYA
+                        self.logDbg("TYA", 2, AMRes{}, g3_addr_mode_tag);
+                        self.a = self.y;
+                        self.status.zero = if (self.y == 0) 1 else 0;
+                        self.status.negative = if (self.y >> 7 != 0) 1 else 0;
+                        self.wait_cycle = 2;
+                    },
+                    0xA8 => { // TAY
+                        self.logDbg("TAY", 2, AMRes{}, g3_addr_mode_tag);
+                        self.y = self.a;
+                        self.status.zero = if (self.y == 0) 1 else 0;
+                        self.status.negative = if (self.y >> 7 != 0) 1 else 0;
+                        self.wait_cycle = 2;
+                    },
+                    0xB8 => { // CLV
+                        self.logDbg("CLV", 2, AMRes{}, g3_addr_mode_tag);
+                        self.status.overflow = 0;
+                        self.wait_cycle = 2;
+                    },
+                    0xC8 => { // INY
+                        self.logDbg("INY", 2, AMRes{}, g3_addr_mode_tag);
+                        self.INStuff(&self.y);
+                        self.wait_cycle = 2;
+                    },
+                    0xD8 => { // CLD
+                        self.logDbg("CLD", 2, AMRes{}, g3_addr_mode_tag);
+                        self.status.decimalMode = 0;
+                        self.wait_cycle = 2;
+                    },
+                    0xE8 => { // INX
+                        self.logDbg("INX", 2, AMRes{}, g3_addr_mode_tag);
+                        self.INStuff(&self.x);
+                        self.wait_cycle = 2;
+                    },
+                    0xF8 => { // SED
+                        self.logDbg("SED", 2, AMRes{}, g3_addr_mode_tag);
+                        self.status.decimalMode = 1;
+                        self.wait_cycle = 2;
+                    },
+                    else => {
+                        const am_res = if (instruction == 0x6C) self.AM_Indirect() else g3_addr_mode[addr_mode](self);
+                        const g3_instruction = [8](*const fn (*CPU, u8, AMRes) u8){
+                            CPU.NOP, CPU.BIT, CPU.JMP, CPU.JMP, CPU.STY, CPU.LDY, CPU.CPY, CPU.CPX,
+                        };
+                        const g3_instruction_str = [_][]const u8{
+                            "NOP", "BIT", "JMP", "JMP", "STY", "LDX", "CPY", "CPX",
+                        };
+                        if (addr_mode == 4) { // Branch it all
+                            const branch_instruction_name = [_][]const u8{
+                                "BPL", "BMI", "BVC", "BVS", "BCC", "BCS", "BNE", "BEQ",
+                            };
+                            self.logDbg(branch_instruction_name[op_code], addr_mode, am_res, g2_addr_mode_tag);
+                            const comp_what = instruction >> 6;
+                            var comp_with: u8 = 0;
+                            if (instruction & 0b00100000 != 0) {
+                                comp_with = 1;
+                            }
+                            const comp_val: u8 = switch (comp_what) {
+                                0 => self.status.negative,
+                                1 => self.status.overflow,
+                                2 => self.status.carry,
+                                3 => self.status.zero,
+                                else => unreachable,
+                            };
+                            if (comp_val == comp_with) {
+                                self.pc = am_res.addr;
+                                self.wait_cycle = 3 + am_res.additionalCycle;
+                            } else {
+                                self.wait_cycle = 2;
+                            }
+                        } else {
+                            self.logDbg(g3_instruction_str[op_code], if (instruction == 0x6C) 6 else addr_mode, am_res, g3_addr_mode_tag);
+                            self.wait_cycle = g3_instruction[op_code](self, addr_mode, am_res) + am_res.additionalCycle;
+                        }
+                    },
+                }
+            },
+            else => {},
+        }
+    }
 
     pub fn exec(self: *CPU, end_after_: u16) !void {
         var end_after = end_after_;
-        var wait_cycle: u8 = 0;
         while (true) {
-            defer wait();
             if (end_after != 0) {
                 end_after -= 1;
                 if (end_after == 0) {
                     break;
                 }
             }
-            if (wait_cycle != 0) {
-                wait_cycle -= 1;
-                continue;
-            }
-            if (self.pc == 0xFFFA) {
-                break;
-            }
-            // std.debug.print("Next: {x} {x} {x} {x}\n", .{ self.bus.read(self.pc + 1), self.bus.read(self.pc + 2), self.bus.read(self.pc + 3), self.bus.read(self.pc + 4) });
-            const instruction = self.bus.read(self.pc);
-            std.debug.print("{x:4} {x:2} ", .{ self.pc, instruction });
-            self.pc += 1;
-            const group = instruction & 3;
-            const op_code = (instruction & 0b11100000) >> 5;
-            const addr_mode = (instruction & 0b11100) >> 2;
-            switch (group) {
-                // Group 1
-                0b01 => {
-                    const am_res = g1_addr_mode[addr_mode](self);
-                    const g1_instruction = [8](*const fn (*CPU, u8, AMRes) u8){
-                        CPU.ORA, CPU.AND, CPU.EOR, CPU.ADC, CPU.STA, CPU.LDA, CPU.CMP, CPU.SBC,
-                    };
-                    const g1_instruction_str = [_][]const u8{
-                        "ORA", "AND", "EOR", "ADC", "STA", "LDA", "CMP", "SBC",
-                    };
-                    self.logDbg(g1_instruction_str[op_code], addr_mode, am_res, g1_addr_mode_tag);
-                    wait_cycle = g1_instruction[op_code](self, addr_mode, am_res) + am_res.additionalCycle;
-                },
-                // Group 2
-                0b10 => {
-                    var am_res: AMRes = undefined;
-                    if (op_code == 4 or op_code == 5) { // LDX and STX exception
-                        if (addr_mode == 5) {
-                            am_res = self.AM_ZeroPageY();
-                        }
-                        if (addr_mode == 7) {
-                            am_res = self.AM_AbsoluteY();
-                        }
-                        am_res = g2_addr_mode[addr_mode](self);
-                    } else {
-                        am_res = g2_addr_mode[addr_mode](self);
-                    }
-                    const g2_instruction = [8](*const fn (*CPU, u8, AMRes) u8){
-                        CPU.ASL, CPU.ROL, CPU.LSR, CPU.ROR, CPU.STX, CPU.LDX, CPU.DEC, CPU.INC,
-                    };
-                    const g2_instruction_str = [_][]const u8{
-                        "ASL", "ROL", "LSR", "ROR", "STX", "LDX", "DEC", "INC",
-                    };
-                    switch (instruction) {
-                        0x8A => { // TXA
-                            self.logDbg("TXA", addr_mode, am_res, g2_addr_mode_tag);
-                            self.a = self.x;
-                            self.status.zero = if (self.a == 0) 1 else 0;
-                            self.status.negative = if (self.a >> 7 != 0) 1 else 0;
-                            wait_cycle = 2;
-                        },
-                        0x9A => { // TXS
-                            self.logDbg("TXS", addr_mode, am_res, g2_addr_mode_tag);
-                            self.sp = self.x;
-                            wait_cycle = 2;
-                        },
-                        0xAA => { // TAX
-                            self.logDbg("TAX", addr_mode, am_res, g2_addr_mode_tag);
-                            self.x = self.a;
-                            self.status.zero = if (self.a == 0) 1 else 0;
-                            self.status.negative = if (self.a >> 7 != 0) 1 else 0;
-                            wait_cycle = 2;
-                        },
-                        0xBA => { // TSX
-                            self.logDbg("TSX", addr_mode, am_res, g2_addr_mode_tag);
-                            self.x = self.sp;
-                            self.status.zero = if (self.x == 0) 1 else 0;
-                            self.status.negative = if (self.x >> 7 != 0) 1 else 0;
-                            wait_cycle = 2;
-                        },
-                        0xCA => { // DEX
-                            self.logDbg("DEX", addr_mode, am_res, g2_addr_mode_tag);
-                            self.DEStuff(&self.x);
-                            wait_cycle = 2;
-                        },
-                        0xEA => { // NOP
-                            self.logDbg("NOP", addr_mode, am_res, g2_addr_mode_tag);
-                            wait_cycle = 2;
-                        },
-                        else => {
-                            self.logDbg(g2_instruction_str[op_code], addr_mode, am_res, g2_addr_mode_tag);
-                            wait_cycle = g2_instruction[op_code](self, addr_mode, am_res) + am_res.additionalCycle;
-                        },
-                    }
-                },
-                // Group 3
-                0b00 => {
-                    switch (instruction) {
-                        0x00 => { // BRK is a 2-byte opcode
-                            self.logDbg("BRK", 2, AMRes{}, g3_addr_mode_tag);
-                            const padding = self.bus.read(self.pc);
-                            _ = padding;
-                            self.pc += 1;
-                            self.bus.write(self.getStackAddr(0), @bitCast(self.status));
-                            const hi: u8 = @truncate(self.pc >> 8);
-                            self.bus.write(self.getStackAddr(-1), hi);
-                            const lo: u8 = @truncate(self.pc);
-                            self.bus.write(self.getStackAddr(-2), lo);
-                            self.sp -%= 3;
-                            self.pc = @as(u16, @intCast(self.bus.read(0xFFFF))) << 8 | self.bus.read(0xFFFE);
-                            self.status.breakCommand = 1;
-                            wait_cycle = 7;
-                        },
-                        0x20 => { // JSR
-                            const am_res = self.AM_Absolute();
-                            self.logDbg("JSR", 3, am_res, g3_addr_mode_tag);
-                            self.pc -= 1;
-                            const hi: u8 = @truncate(self.pc >> 8);
-                            self.bus.write(self.getStackAddr(0), hi);
-                            const lo: u8 = @truncate(self.pc);
-                            self.bus.write(self.getStackAddr(-1), lo);
-                            self.sp -%= 2;
-                            self.pc = am_res.addr;
-                            wait_cycle = 6;
-                        },
-                        0x40 => { // RTI
-                            self.logDbg("RTI", 2, AMRes{}, g3_addr_mode_tag);
-                            self.sp +%= 1;
-                            self.status = @bitCast(self.bus.read(self.getStackAddr(0)));
-                            const pc_lo = self.bus.read(self.getStackAddr(1));
-                            const pc_hi: u16 = self.bus.read(self.getStackAddr(2));
-                            self.sp +%= 2;
-                            self.pc = pc_hi << 8 | pc_lo;
-                            wait_cycle = 6;
-                        },
-                        0x60 => { // RTS
-                            self.logDbg("RTS", 2, AMRes{}, g3_addr_mode_tag);
-                            self.sp +%= 1;
-                            const pc_lo = self.bus.read(self.getStackAddr(0));
-                            const pc_hi: u16 = self.bus.read(self.getStackAddr(1));
-                            self.sp +%= 1;
-                            self.pc = (pc_hi << 8 | pc_lo) + 1;
-                            wait_cycle = 6;
-                        },
-                        0x08 => { // PHP not the language
-                            self.logDbg("PHP", 2, AMRes{}, g3_addr_mode_tag);
-                            self.bus.write(self.getStackAddr(0), @bitCast(self.status));
-                            self.sp -%= 1;
-                            wait_cycle = 3;
-                        },
-                        0x18 => { // CLC
-                            self.logDbg("CLC", 2, AMRes{}, g3_addr_mode_tag);
-                            self.status.carry = 0;
-                            wait_cycle = 2;
-                        },
-                        0x28 => { // PLP
-                            self.logDbg("PLP", 2, AMRes{}, g3_addr_mode_tag);
-                            self.sp +%= 1;
-                            self.status = @bitCast(self.bus.read(self.getStackAddr(0)));
-                            wait_cycle = 4;
-                        },
-                        0x38 => { // SEC
-                            self.logDbg("SEC", 2, AMRes{}, g3_addr_mode_tag);
-                            self.status.carry = 1;
-                            wait_cycle = 2;
-                        },
-                        0x48 => { // PHA
-                            self.logDbg("PHA", 2, AMRes{}, g3_addr_mode_tag);
-                            self.bus.write(self.getStackAddr(0), self.a);
-                            self.sp -%= 1;
-                            wait_cycle = 3;
-                        },
-                        0x58 => { // CLI
-                            self.logDbg("CLI", 2, AMRes{}, g3_addr_mode_tag);
-                            self.status.interruptDisable = 0;
-                            wait_cycle = 2;
-                        },
-                        0x68 => { // PLA
-                            self.logDbg("PLA", 2, AMRes{}, g3_addr_mode_tag);
-                            self.sp +%= 1;
-                            self.a = self.bus.read(self.getStackAddr(0));
-                            self.status.zero = if (self.a == 0) 1 else 0;
-                            self.status.negative = if (self.a >> 7 != 0) 1 else 0;
-                            wait_cycle = 4;
-                        },
-                        0x78 => { // SEI
-                            self.logDbg("SEI", 2, AMRes{}, g3_addr_mode_tag);
-                            self.status.interruptDisable = 1;
-                            wait_cycle = 2;
-                        },
-                        0x88 => { // DEY
-                            self.logDbg("DEY", 2, AMRes{}, g3_addr_mode_tag);
-                            self.DEStuff(&self.y);
-                            wait_cycle = 2;
-                        },
-                        0x98 => { // TYA
-                            self.logDbg("TYA", 2, AMRes{}, g3_addr_mode_tag);
-                            self.a = self.y;
-                            self.status.zero = if (self.y == 0) 1 else 0;
-                            self.status.negative = if (self.y >> 7 != 0) 1 else 0;
-                            wait_cycle = 2;
-                        },
-                        0xA8 => { // TAY
-                            self.logDbg("TAY", 2, AMRes{}, g3_addr_mode_tag);
-                            self.y = self.a;
-                            self.status.zero = if (self.y == 0) 1 else 0;
-                            self.status.negative = if (self.y >> 7 != 0) 1 else 0;
-                            wait_cycle = 2;
-                        },
-                        0xB8 => { // CLV
-                            self.logDbg("CLV", 2, AMRes{}, g3_addr_mode_tag);
-                            self.status.overflow = 0;
-                            wait_cycle = 2;
-                        },
-                        0xC8 => { // INY
-                            self.logDbg("INY", 2, AMRes{}, g3_addr_mode_tag);
-                            self.INStuff(&self.y);
-                            wait_cycle = 2;
-                        },
-                        0xD8 => { // CLD
-                            self.logDbg("CLD", 2, AMRes{}, g3_addr_mode_tag);
-                            self.status.decimalMode = 0;
-                            wait_cycle = 2;
-                        },
-                        0xE8 => { // INX
-                            self.logDbg("INX", 2, AMRes{}, g3_addr_mode_tag);
-                            self.INStuff(&self.x);
-                            wait_cycle = 2;
-                        },
-                        0xF8 => { // SED
-                            self.logDbg("SED", 2, AMRes{}, g3_addr_mode_tag);
-                            self.status.decimalMode = 1;
-                            wait_cycle = 2;
-                        },
-                        else => {
-                            const am_res = if (instruction == 0x6C) self.AM_Indirect() else g3_addr_mode[addr_mode](self);
-                            const g3_instruction = [8](*const fn (*CPU, u8, AMRes) u8){
-                                CPU.NOP, CPU.BIT, CPU.JMP, CPU.JMP, CPU.STY, CPU.LDY, CPU.CPY, CPU.CPX,
-                            };
-                            const g3_instruction_str = [_][]const u8{
-                                "NOP", "BIT", "JMP", "JMP", "STY", "LDX", "CPY", "CPX",
-                            };
-                            if (addr_mode == 4) { // Branch it all
-                                const branch_instruction_name = [_][]const u8{
-                                    "BPL", "BMI", "BVC", "BVS", "BCC", "BCS", "BNE", "BEQ",
-                                };
-                                self.logDbg(branch_instruction_name[op_code], addr_mode, am_res, g2_addr_mode_tag);
-                                const comp_what = instruction >> 6;
-                                var comp_with: u8 = 0;
-                                if (instruction & 0b00100000 != 0) {
-                                    comp_with = 1;
-                                }
-                                const comp_val: u8 = switch (comp_what) {
-                                    0 => self.status.negative,
-                                    1 => self.status.overflow,
-                                    2 => self.status.carry,
-                                    3 => self.status.zero,
-                                    else => unreachable,
-                                };
-                                if (comp_val == comp_with) {
-                                    self.pc = am_res.addr;
-                                    wait_cycle = 3 + am_res.additionalCycle;
-                                } else {
-                                    wait_cycle = 2;
-                                }
-                            } else {
-                                self.logDbg(g3_instruction_str[op_code], if (instruction == 0x6C) 6 else addr_mode, am_res, g3_addr_mode_tag);
-                                wait_cycle = g3_instruction[op_code](self, addr_mode, am_res) + am_res.additionalCycle;
-                            }
-                        },
-                    }
-                },
-                else => {},
-            }
+            try self.step();
         }
     }
 };

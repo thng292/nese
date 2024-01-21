@@ -1,7 +1,7 @@
 const std = @import("std");
 
 pub const RAM = struct {
-    data: [2048]u8 = undefined,
+    data: [2048]u8 = std.mem.zeroes([2048]u8),
 
     pub fn inRange(self: *RAM, addr: u16) bool {
         _ = self;

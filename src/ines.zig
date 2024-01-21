@@ -119,10 +119,10 @@ pub const ROM = struct {
     const ProgramRomDev = struct {
         const Self = @This();
         data: []u8,
-        lower_bound: u16,
+        lower_bound: u16 = 0x8000,
 
         pub fn inRange(pg: *Self, addr: u16) bool {
-            return pg.lower_bound <= addr and addr < 0xFFFA;
+            return pg.lower_bound <= addr;
         }
 
         pub fn read(pg: *Self, addr: u16) u8 {
