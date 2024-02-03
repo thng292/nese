@@ -1,16 +1,15 @@
 const std = @import("std");
 const Bus = @import("bus.zig").Bus;
-const devInterfaceImport = @import("devInterface.zig");
-const devInterface = devInterfaceImport.devInterface;
-const toDevInterface = devInterfaceImport.toDevInterface;
 
 pub const NESConsoleFamily = enum(u2) { NES, VS, PlayChoice10, Extended };
+
 pub const TimingMode = enum(u2) {
     RP2C02,
     RP2C07,
     Multiple_region,
     UA6538,
 };
+
 pub const Header = packed struct(u128) {
     name: u32,
     PRG_ROM_Size: u8,
@@ -92,54 +91,6 @@ pub const ROM = struct {
         FileCorrupted,
         FileNotNESRom,
     };
-
-    const CartridgeRAMDev = struct {
-        const Self = @This();
-        const lower_bound = 0x6000;
-        data: []u8,
-
-        pub fn inRange(cram: *Self, addr: u16) bool {
-            _ = cram;
-            return lower_bound <= addr and addr <= 0x7FFF;
-        }
-
-        pub fn read(cram: *Self, addr: u16) u8 {
-            return cram.data[addr - lower_bound];
-        }
-
-        pub fn write(cram: *Self, addr: u16, data: u8) void {
-            cram.data[addr - lower_bound] = data;
-        }
-    };
-
-    pub fn getCartridgeRamDev(self: *ROM) CartridgeRAMDev {
-        return CartridgeRAMDev{ .data = self.cartRam };
-    }
-
-    const ProgramRomDev = struct {
-        const Self = @This();
-        data: []u8,
-        lower_bound: u16 = 0x8000,
-
-        pub fn inRange(pg: *Self, addr: u16) bool {
-            return pg.lower_bound <= addr;
-        }
-
-        pub fn read(pg: *Self, addr: u16) u8 {
-            return pg.data[addr - pg.lower_bound];
-        }
-
-        pub fn write(pg: *Self, addr: u16, data: u8) void {
-            pg.data[addr - pg.lower_bound] = data;
-        }
-    };
-
-    pub fn getProgramRomDev(self: *ROM) ProgramRomDev {
-        return ProgramRomDev{
-            .data = self.PRG_RomBanks,
-            .lower_bound = if (self.header.PRG_ROM_Size == 1) 0xC000 else 0x8000,
-        };
-    }
 
     pub fn readFromFile(file: std.fs.File, allocator: std.mem.Allocator) !ROM {
         var self = ROM{

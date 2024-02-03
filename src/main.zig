@@ -4,146 +4,72 @@ const CPU = @import("cpu6502.zig").CPU;
 const simple_prog = @import("cpu6502.zig").simple_prog;
 const sdl = @import("zsdl");
 const iNes = @import("ines.zig").ROM;
+const Ram = @import("ram.zig");
+const IO = @import("io.zig");
+const Mapper0 = @import("mapper0.zig");
+const PPU = @import("ppu2C02.zig");
+const toMapper = @import("mapper.zig").toMapper;
+
+const base_screen_w = 256;
+const base_screen_h = 240;
+const ppu_clock = 21477272 / 4;
+const cpu_clock = ppu_clock / 3;
 
 pub fn main() !void {
     try sdl.init(.{ .audio = true, .video = true });
     defer sdl.quit();
     const window = try sdl.Window.create(
-        "zig-gamedev-window",
+        "nese",
         sdl.Window.pos_undefined,
         sdl.Window.pos_undefined,
-        600,
-        600,
+        base_screen_w * 3,
+        base_screen_h * 3,
         .{ .opengl = true, .allow_highdpi = true },
     );
     defer window.destroy();
     const renderer = try sdl.Renderer.create(window, -1, .{
-        .accelerated = false,
+        .accelerated = true,
         .present_vsync = false,
     });
+    defer renderer.destroy();
+
     const testRomFile = try std.fs.cwd().openFile("test-rom/nestest.nes", .{});
     defer testRomFile.close();
     var test_rom = try iNes.readFromFile(testRomFile, std.heap.page_allocator);
     defer test_rom.deinit();
 
-    try renderer.setDrawColorRGB(255, 0, 0);
-    try renderer.clear();
-
-    var event = std.mem.zeroes(sdl.Event);
-    const colors = [_]sdl.Color{
-        .{ .r = 0xBB, .g = 0xBB, .b = 0xBB, .a = 0xBB },
-        .{ .r = 0xEE, .g = 0xEE, .b = 0xEE, .a = 0xFF },
-        .{ .r = 0xDD, .g = 0xDD, .b = 0xDD, .a = 0xFF },
-        .{ .r = 0xCC, .g = 0xCC, .b = 0xCC, .a = 0xFF },
+    var mapper0 = Mapper0.init(&test_rom);
+    const mapper = toMapper(&mapper0);
+    var ppu = try PPU.init(std.heap.page_allocator, mapper, &test_rom);
+    defer ppu.deinit();
+    var bus = Bus.init(mapper, &ppu);
+    var cpu = CPU{
+        .bus = &bus,
+        .sp = 0xFF - 3,
     };
-    var x: u16 = 0;
-    var y: u16 = 0;
-    const width = 8;
-    const scale = 3;
-    for (0..test_rom.CHR_RomBanks.len / (width * 2)) |i| {
-        const lsb = test_rom.CHR_RomBanks[i * 16 .. i * 16 + 8];
-        const msb = test_rom.CHR_RomBanks[i * 16 + 8 .. (i + 1) * 16];
-        for (0..8) |tmpY| {
-            const yy: u3 = @truncate(tmpY);
-            const currentByteLo = lsb[yy];
-            const currentByteHi = msb[yy];
-            for (0..8) |tmpX| {
-                const xx: u3 = @truncate(tmpX);
-                const j: u3 = @truncate(tmpX);
-                var pixel: u2 = getBit(currentByteHi, j);
-                pixel <<= 1;
-                pixel |= getBit(currentByteLo, j);
-                try renderer.setDrawColor(colors[pixel]);
-                try renderer.fillRect(.{
-                    .x = x + @as(i32, @intCast(xx)) * scale,
-                    .y = y + @as(i32, @intCast(yy)) * scale,
-                    .w = scale,
-                    .h = scale,
-                });
-            }
-        }
-        x += 8 * scale;
-        if (x == 256 * scale) {
-            x = 0;
-            y += 8 * scale;
-        }
-    }
-    renderer.present();
-    while (true) {
-        defer sdl.delay(16);
-        while (sdl.pollEvent(&event)) {
-            switch (event.type) {
-                .quit => {
-                    return;
-                },
-                else => {},
-            }
-        }
-    }
-}
+    cpu.reset();
 
-fn getBit(num: u8, idx: u3) u1 {
-    return @truncate(num >> (7 - idx) & 1);
-}
-
-fn graphicTest() !void {
-    try sdl.init(.{ .audio = true, .video = true });
-    defer sdl.quit();
-    const window = try sdl.Window.create(
-        "zig-gamedev-window",
-        sdl.Window.pos_undefined,
-        sdl.Window.pos_undefined,
-        600,
-        600,
-        .{ .opengl = true, .allow_highdpi = true },
+    var event: sdl.Event = undefined;
+    var start_frame = std.time.milliTimestamp();
+    var run = true;
+    var step = false;
+    var thread = try std.Thread.spawn(
+        .{ .allocator = std.heap.page_allocator },
+        nesLogic,
+        .{ &cpu, &ppu, &bus, &run, &step },
     );
-    defer window.destroy();
-    const renderer = try sdl.Renderer.create(window, -1, .{
-        .accelerated = false,
-        .present_vsync = false,
-    });
-
-    var rect = sdl.Rect{ .x = 10, .y = 10, .w = 10, .h = 10 };
-    var isUp = false;
-    var isDown = false;
-    var isLeft = false;
-    var isRight = false;
-    var event = std.mem.zeroes(sdl.Event);
-    const bg_color = sdl.Color{
-        .r = 30,
-        .g = 30,
-        .b = 30,
-        .a = 255,
-    };
-    const rect_color = sdl.Color{
-        .r = 0,
-        .g = 0,
-        .b = 255,
-        .a = 255,
-    };
-
+    thread.detach();
     while (true) {
         while (sdl.pollEvent(&event)) {
             switch (event.type) {
-                .quit => {
-                    return;
-                },
-                .keydown, .keyup => {
-                    if (event.key.repeat != 0) {
-                        break;
-                    }
+                .quit => return,
+                .keydown => {
                     switch (event.key.keysym.scancode) {
-                        .a => {
-                            isLeft = event.type == .keydown;
-                        },
-                        .d => {
-                            isRight = event.type == .keydown;
-                        },
+                        .h => try ppu.printNametable1(),
+                        .p => run = !run,
                         .s => {
-                            isDown = event.type == .keydown;
-                        },
-                        .w => {
-                            isUp = event.type == .keydown;
+                            step = true;
+                            run = true;
                         },
                         else => {},
                     }
@@ -152,47 +78,46 @@ fn graphicTest() !void {
             }
         }
 
-        if (isUp) {
-            rect.y -= 10;
-        }
-        if (isDown) {
-            rect.y += 10;
-        }
-        if (isLeft) {
-            rect.x -= 10;
-        }
-        if (isRight) {
-            rect.x += 10;
-        }
-
-        try renderer.setDrawColor(bg_color);
+        try renderer.setDrawColor(.{
+            .r = 255,
+            .g = 255,
+            .b = 255,
+            .a = 255,
+        });
         try renderer.clear();
-        try renderer.setDrawColor(rect_color);
-        try renderer.fillRect(rect);
+        const now = std.time.milliTimestamp();
+        const fps = @as(f32, 1.0) / @as(f32, @floatFromInt(now - start_frame));
+        start_frame = now;
+        try drawFPS(renderer, fps);
         renderer.present();
         sdl.delay(16);
     }
 }
 
-fn cpu_test_all() !void {
-    const Ram = @import("ram.zig").RAM;
-    const testRomFile = try std.fs.cwd().openFile("test-rom/nestest.nes", .{});
-    defer testRomFile.close();
-    var test_rom = try iNes.readFromFile(testRomFile, std.heap.page_allocator);
-    defer test_rom.deinit();
-    var bus = Bus.init(std.heap.page_allocator);
-    defer bus.deinit();
-    var ram = Ram{};
-    try bus.register(&ram);
-    var cartridge_ram = test_rom.getCartridgeRamDev();
-    try bus.register(&cartridge_ram);
-    var prog_rom = test_rom.getProgramRomDev();
-    try bus.register(&prog_rom);
-    var cpu = CPU{ .bus = bus, .pc = 0xC000, .sp = 0xFF };
-    try cpu.exec(0xA000);
-    std.log.warn("0x02 0x03 {x}{x}", .{ bus.read(0x02), bus.read(0x03) });
+fn nesLogic(cpu: *CPU, ppu: *PPU, bus: *Bus, run: *bool, step: *bool) !void {
+    const delay_time = std.time.ns_per_s / cpu_clock;
+    while (true) {
+        if (run.*) {
+            const start = std.time.nanoTimestamp();
+            bus.nmiSet = ppu.nmiSend;
+            ppu.nmiSend = false;
+            try cpu.step();
+            ppu.clock();
+            ppu.clock();
+            ppu.clock();
+            const now = std.time.nanoTimestamp();
+            const elapsed = now - start;
+            const tmp: i32 = @truncate(@divTrunc(delay_time - elapsed, std.time.ns_per_ms));
+            sdl.delay(@bitCast(tmp));
+        }
+        if (step.*) {
+            step.* = false;
+            run.* = false;
+        }
+    }
 }
 
-test "CPU test all" {
-    try cpu_test_all();
+fn drawFPS(renderer: *sdl.Renderer, fps: f32) !void {
+    _ = renderer;
+    _ = fps;
 }

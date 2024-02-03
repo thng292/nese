@@ -8,7 +8,7 @@ pub const ApiVersion = enum {
 
 pub const Options = struct {
     api_version: ApiVersion = .sdl2,
-    enable_ttf: bool = false,
+    disable_ttf: bool = false,
 };
 
 pub const Package = struct {
@@ -38,7 +38,7 @@ pub const Package = struct {
                     .sdl2 => {
                         exe.linkSystemLibrary("SDL2");
                         exe.linkSystemLibrary("SDL2main");
-                        if (pkg.options.enable_ttf) {
+                        if (!pkg.options.disable_ttf) {
                             exe.linkSystemLibrary("SDL2_ttf");
                         }
                     },
@@ -57,7 +57,7 @@ pub const Package = struct {
                 switch (pkg.options.api_version) {
                     .sdl2 => {
                         exe.linkSystemLibrary("SDL2-2.0");
-                        if (pkg.options.enable_ttf) {
+                        if (!pkg.options.disable_ttf) {
                             exe.linkSystemLibrary("SDL2_ttf-2.0");
                         }
                     },
@@ -74,7 +74,7 @@ pub const Package = struct {
                 switch (pkg.options.api_version) {
                     .sdl2 => {
                         exe.linkFramework("SDL2");
-                        if (pkg.options.enable_ttf) {
+                        if (!pkg.options.disable_ttf) {
                             exe.linkFramework("SDL2_ttf");
                         }
                     },
@@ -84,7 +84,7 @@ pub const Package = struct {
                         exe.addLibraryPath(.{ .path = "/usr/local/lib" });
                         exe.linkSystemLibrary("SDL3");
 
-                        if (pkg.options.enable_ttf) {
+                        if (!pkg.options.disable_ttf) {
                             exe.linkFramework("SDL2_ttf");
                         }
                     },
@@ -144,7 +144,7 @@ pub fn package(
                         "bin/SDL2.dll",
                     ).step,
                 );
-                if (args.options.enable_ttf) {
+                if (!args.options.disable_ttf) {
                     install_step.dependOn(
                         &b.addInstallFile(
                             .{ .path = thisDir() ++ "/libs/x86_64-windows-gnu/bin/SDL2_ttf.dll" },
@@ -164,7 +164,7 @@ pub fn package(
                         "bin/libSDL2-2.0.so.0",
                     ).step,
                 );
-                if (args.options.enable_ttf) {
+                if (!args.options.disable_ttf) {
                     install_step.dependOn(
                         &b.addInstallFile(
                             .{ .path = thisDir() ++ "/libs/x86_64-linux-gnu/lib/libSDL2_ttf-2.0.so" },
@@ -185,7 +185,7 @@ pub fn package(
                         .install_subdir = "bin/Frameworks/SDL2.framework",
                     }).step,
                 );
-                if (args.options.enable_ttf) {
+                if (!args.options.disable_ttf) {
                     install_step.dependOn(
                         &b.addInstallDirectory(.{
                             .source_dir = .{ .path = thisDir() ++ "/libs/macos/Frameworks/SDL2_ttf.framework" },
@@ -237,7 +237,7 @@ pub fn runTests(
     const zsdl_pkg = package(b, target, optimize, .{
         .options = .{
             .api_version = api_version,
-            .enable_ttf = true,
+            .disable_ttf = false,
         },
     });
     zsdl_pkg.link(tests);

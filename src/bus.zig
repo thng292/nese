@@ -1,72 +1,48 @@
-const devInterfaceImport = @import("devInterface.zig");
-const devInterface = devInterfaceImport.devInterface;
 const std = @import("std");
+const Mapper = @import("mapper.zig");
+const Ram = @import("ram.zig");
+const PPU = @import("ppu2C02.zig");
+const IO = @import("io.zig");
+const APU = @import("apu2A03.zig");
 
 pub const Bus = struct {
-    devs: std.ArrayList(devInterface),
+    mapper: Mapper,
+    ram: Ram,
+    ppu: *PPU,
+    io: IO,
+    apu: APU,
+    nmiSet: bool = false,
+    irqSet: bool = false,
 
-    pub fn init(allocator: std.mem.Allocator) Bus {
-        return Bus{ .devs = std.ArrayList(devInterface).init(allocator) };
+    pub fn init(mapper: Mapper, ppu: *PPU) Bus {
+        return Bus{
+            .ram = std.mem.zeroes(Ram),
+            .io = std.mem.zeroes(IO),
+            .apu = std.mem.zeroes(APU),
+            .ppu = ppu,
+            .mapper = mapper,
+        };
     }
 
-    pub fn deinit(self: *Bus) void {
-        self.devs.deinit();
+    pub fn read(self: *Bus, addr: u16) u8 {
+        return switch (addr) {
+            0x0000...0x1FFF => self.ram.read(addr),
+            0x2000...0x3FFF => self.ppu.read(addr),
+            0x4016...0x4017 => self.io.read(addr),
+            0x4020...0xFFFF => self.mapper.cpuRead(addr),
+            else => 0,
+        };
     }
 
-    pub fn read(self: *Bus, address: u16) u8 {
-        for (self.devs.items) |*dev| {
-            if (dev.inRange(address)) {
-                return dev.read(address);
-            }
+    pub fn write(self: *Bus, addr: u16, data: u8) void {
+        switch (addr) {
+            0x0000...0x1FFF => self.ram.write(addr, data),
+            0x2000...0x3FFF => self.ppu.write(addr, data),
+            0x4000...0x4013, 0x4015, 0x4017 => self.apu.write(addr, data),
+            0x4014 => {}, // COPY OAM DATA
+            0x4016 => self.io.write(addr, data),
+            0x4020...0xFFFF => self.mapper.cpuWrite(addr, data),
+            else => {},
         }
-        std.debug.print("Missed 0x{x}\n", .{address});
-        std.os.exit(1);
-        return 0;
-    }
-
-    pub fn write(self: *Bus, address: u16, data: u8) void {
-        for (self.devs.items) |*dev| {
-            if (dev.inRange(address)) {
-                return dev.write(address, data);
-            }
-        }
-        std.debug.print("Missed 0x{x}", .{address});
-    }
-
-    pub fn register(self: *Bus, dev: anytype) !void {
-        // comptime if (std.meta.trait.isSingleItemPtr(@TypeOf(dev)) == false) {
-        //     @compileError("Accept pointer only");
-        // };
-        try self.devs.append(devInterfaceImport.toDevInterface(@TypeOf(dev.*), dev));
     }
 };
-
-test "bus test" {
-    const testDev = struct {
-        const Self = @This();
-        min: u16,
-        max: u16,
-
-        pub fn inRange(self: *Self, address: u16) bool {
-            return self.min <= address and address <= self.max;
-        }
-
-        pub fn read(self: *Self, address: u16) u8 {
-            _ = address;
-            _ = self;
-            return 12;
-        }
-
-        pub fn write(self: *Self, address: u16, data: u8) void {
-            _ = self;
-            _ = data;
-            _ = address;
-        }
-    };
-
-    var tmp = testDev{ .min = 0, .max = 100 };
-
-    var bus = Bus.init(std.testing.allocator);
-    defer bus.deinit();
-    try bus.register(&tmp);
-}

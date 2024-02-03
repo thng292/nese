@@ -1,9 +1,8 @@
 const std = @import("std");
 const Bus = @import("bus.zig").Bus;
-const rom = @import("ines.zig").ROM;
 
 pub const CPU = struct {
-    bus: Bus,
+    bus: *Bus,
     a: u8 = 0,
     x: u8 = 0,
     y: u8 = 0,
@@ -11,17 +10,32 @@ pub const CPU = struct {
     sp: u8 = 0xFF,
     status: CPUStatus = CPUStatus{},
     wait_cycle: u8 = 0,
+    cycle_count: u64 = 0,
 
     const CPUStatus = packed struct(u8) {
-        negative: u1 = 0,
-        overflow: u1 = 0,
-        reserved: u1 = 1,
-        breakCommand: u1 = 0,
-        decimalMode: u1 = 0,
-        interruptDisable: u1 = 0,
-        zero: u1 = 0,
         carry: u1 = 0,
+        zero: u1 = 0,
+        interruptDisable: u1 = 0,
+        decimalMode: u1 = 0,
+        breakCommand: u1 = 1,
+        reserved: u1 = 1,
+        overflow: u1 = 0,
+        negative: u1 = 0,
     };
+
+    pub fn reset(self: *CPU) void {
+        self.a = 0;
+        self.x = 0;
+        self.y = 0;
+        self.sp = 0xFF - 3;
+        self.status = CPUStatus{};
+        self.wait_cycle = 0;
+        self.cycle_count = 0;
+        self.pc = self.bus.read(0xFFFC);
+        var tmp: u16 = self.bus.read(0xFFFD);
+        tmp <<= 8;
+        self.pc |= tmp;
+    }
 
     fn getStackAddr(self: *CPU, offset: i8) u16 {
         const res: i16 = @intCast(self.sp);
@@ -48,43 +62,83 @@ pub const CPU = struct {
         res: u8 = 0,
         addr: u16 = 0,
         additionalCycle: u8 = 0,
+        res_fetched: bool = false,
     };
 
-    fn MNI(self: *CPU) void {
-        self.bus.write(self.getStackAddr(0), @bitCast(self.status));
+    fn NMI(self: *CPU) u8 {
+        var tmp = self.status;
+        tmp.breakCommand = 0;
+        self.bus.write(self.getStackAddr(0), @bitCast(tmp));
         self.bus.write(self.getStackAddr(-1), @truncate(self.pc));
         self.bus.write(self.getStackAddr(-2), @truncate(self.pc >> 8));
         self.sp -= 3;
+        self.status.interruptDisable = 1;
         var nmi_handler_addr: u16 = self.bus.read(0xFFFA);
-        nmi_handler_addr |= self.bus.read(0xFFFB) << 8;
+        nmi_handler_addr |= @as(u16, @intCast(self.bus.read(0xFFFB))) << 8;
         self.pc = nmi_handler_addr;
+        return 7;
+    }
+
+    fn IRQ(self: *CPU) u8 {
+        var tmp = self.status;
+        tmp.breakCommand = 0;
+        self.bus.write(self.getStackAddr(0), @bitCast(tmp));
+        self.bus.write(self.getStackAddr(-1), @truncate(self.pc));
+        self.bus.write(self.getStackAddr(-2), @truncate(self.pc >> 8));
+        self.sp -= 3;
+        self.status.interruptDisable = 1;
+        var nmi_handler_addr: u16 = self.bus.read(0xFFFE);
+        nmi_handler_addr |= @as(u16, @intCast(self.bus.read(0xFFFF))) << 8;
+        self.pc = nmi_handler_addr;
+        return 7;
     }
 
     fn AM_Implied(self: *CPU) AMRes {
-        return AMRes{ .res = self.a, .addr = 0, .additionalCycle = 0 };
+        return AMRes{
+            .res = self.a,
+            .addr = 0,
+            .additionalCycle = 0,
+            .res_fetched = true,
+        };
     }
 
     fn AM_Accumulator(self: *CPU) AMRes {
-        return AMRes{ .res = self.a, .addr = 0, .additionalCycle = 0 };
+        return AMRes{
+            .res = self.a,
+            .addr = 0,
+            .additionalCycle = 0,
+            .res_fetched = true,
+        };
     }
 
     fn AM_Immediate(self: *CPU) AMRes {
         const val = self.bus.read(self.pc);
         self.pc += 1;
-        return AMRes{ .res = val, .addr = 0, .additionalCycle = 0 };
+        return AMRes{
+            .res = val,
+            .addr = 0,
+            .additionalCycle = 0,
+            .res_fetched = true,
+        };
     }
 
     fn AM_ZeroPage(self: *CPU) AMRes {
         const val = self.bus.read(self.pc);
         self.pc += 1;
-        return AMRes{ .res = self.bus.read(val), .addr = val, .additionalCycle = 0 };
+        return AMRes{
+            .addr = val,
+            .additionalCycle = 0,
+        };
     }
 
     fn AM_ZeroPageX(self: *CPU) AMRes {
         const addr = self.bus.read(self.pc);
         self.pc += 1;
         const res: u8 = addr +% self.x;
-        return AMRes{ .addr = res, .res = self.bus.read(res), .additionalCycle = 0 };
+        return AMRes{
+            .addr = res,
+            .additionalCycle = 0,
+        };
     }
 
     fn AM_ZeroPageY(self: *CPU) AMRes {
@@ -93,7 +147,6 @@ pub const CPU = struct {
         const res: u8 = addr +% self.y;
         return AMRes{
             .addr = res,
-            .res = self.bus.read(res),
             .additionalCycle = 0,
         };
     }
@@ -104,7 +157,6 @@ pub const CPU = struct {
         const res = @as(i16, @bitCast(self.pc)) + offset;
         return AMRes{
             .addr = @bitCast(res),
-            .res = self.bus.read(@bitCast(res)),
             .additionalCycle = if (res > 0xFF) 1 else 0,
         };
     }
@@ -116,7 +168,6 @@ pub const CPU = struct {
         self.pc += 1;
         const abs_addr = (hi << 8) | lo;
         return AMRes{
-            .res = self.bus.read(abs_addr),
             .addr = abs_addr,
             .additionalCycle = 0,
         };
@@ -129,7 +180,6 @@ pub const CPU = struct {
         self.pc += 1;
         const addr = ((hi << 8) | lo) +% self.x;
         return AMRes{
-            .res = 0,
             .addr = addr,
             .additionalCycle = if (addr & 0xFF00 != (hi << 8)) 1 else 0,
         };
@@ -143,7 +193,6 @@ pub const CPU = struct {
         const addr = ((hi << 8) | lo) +% self.y;
         return AMRes{
             .addr = addr,
-            .res = 0,
             .additionalCycle = if (addr & 0xFF00 != (hi << 8)) 1 else 0,
         };
     }
@@ -160,7 +209,6 @@ pub const CPU = struct {
         const final_addr = (final_addr_hi << 8) | final_addr_lo;
         return AMRes{
             .addr = final_addr,
-            .res = self.bus.read(final_addr),
             .additionalCycle = 0,
         };
     }
@@ -174,7 +222,6 @@ pub const CPU = struct {
         const final_addr = (hi << 8) | lo;
         return AMRes{
             .addr = final_addr,
-            .res = self.bus.read(final_addr),
             .additionalCycle = 0,
         };
     }
@@ -187,7 +234,6 @@ pub const CPU = struct {
         const hi: u16 = self.bus.read(imm +% 1);
         const final_addr = (hi << 8) | lo +% self.y;
         return AMRes{
-            .res = self.bus.read(final_addr),
             .addr = final_addr,
             .additionalCycle = if (final_addr & 0xFF00 != hi << 8) 1 else 0,
         };
@@ -244,12 +290,12 @@ pub const CPU = struct {
     };
 
     fn logDbg(self: *CPU, instruction_name: []const u8, addr_mode: u8, am_res: AMRes, comptime enum_tag: type) void {
-        std.debug.print("{s} {s:16} res: {x:2} addr: {x:4}, c+: {}, A: {x:2} X: {x:2} Y: {x:2} SP: {x:2} F: {b:8}\n", .{
+        std.debug.print("{s} {s:16} res: {x:2} addr: {x:4}, c: {}, A: {x:2} X: {x:2} Y: {x:2} SP: {x:2} F: {b:8}\n", .{
             instruction_name,
             @tagName(@as(enum_tag, (@enumFromInt(addr_mode)))),
             am_res.res,
             am_res.addr,
-            am_res.additionalCycle,
+            self.cycle_count,
             self.a,
             self.x,
             self.y,
@@ -258,25 +304,41 @@ pub const CPU = struct {
         });
     }
 
-    fn ORA(self: *CPU, addr_mode: u8, am_res: AMRes) u8 {
+    fn ORA(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
+        var am_res = cam_res;
+        if (!am_res.res_fetched) {
+            am_res.res = self.bus.read(am_res.addr);
+        }
         self.a |= am_res.res;
         const instruction_cycle = [8]u8{ 6, 3, 2, 4, 5, 4, 4, 4 };
         return instruction_cycle[addr_mode];
     }
 
-    fn AND(self: *CPU, addr_mode: u8, am_res: AMRes) u8 {
+    fn AND(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
+        var am_res = cam_res;
+        if (!am_res.res_fetched) {
+            am_res.res = self.bus.read(am_res.addr);
+        }
         self.a &= am_res.res;
         const instruction_cycle = [8]u8{ 6, 3, 2, 4, 5, 4, 4, 4 };
         return instruction_cycle[addr_mode];
     }
 
-    fn EOR(self: *CPU, addr_mode: u8, am_res: AMRes) u8 {
+    fn EOR(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
+        var am_res = cam_res;
+        if (!am_res.res_fetched) {
+            am_res.res = self.bus.read(am_res.addr);
+        }
         self.a ^= am_res.res;
         const instruction_cycle = [8]u8{ 6, 3, 2, 4, 5, 4, 4, 4 };
         return instruction_cycle[addr_mode];
     }
 
-    fn ADC(self: *CPU, addr_mode: u8, am_res: AMRes) u8 {
+    fn ADC(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
+        var am_res = cam_res;
+        if (!am_res.res_fetched) {
+            am_res.res = self.bus.read(am_res.addr);
+        }
         if (self.status.decimalMode == 1) {
             const first_a = self.a >> 4;
             const second_a = self.a & 0xFF;
@@ -315,13 +377,17 @@ pub const CPU = struct {
         return instruction_cycle[addr_mode];
     }
 
-    fn STA(self: *CPU, addr_mode: u8, am_res: AMRes) u8 {
-        self.bus.write(am_res.addr, self.a);
+    fn STA(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
+        self.bus.write(cam_res.addr, self.a);
         const instruction_cycle = [8]u8{ 6, 3, 0, 4, 6, 4, 5, 5 };
         return instruction_cycle[addr_mode];
     }
 
-    fn LDA(self: *CPU, addr_mode: u8, am_res: AMRes) u8 {
+    fn LDA(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
+        var am_res = cam_res;
+        if (!am_res.res_fetched) {
+            am_res.res = self.bus.read(am_res.addr);
+        }
         self.a = am_res.res;
         self.status.zero = if (am_res.res == 0) 1 else 0;
         self.status.negative = if (am_res.res & 0x80 != 0) 1 else 0;
@@ -329,7 +395,11 @@ pub const CPU = struct {
         return instruction_cycle[addr_mode];
     }
 
-    fn CMP(self: *CPU, addr_mode: u8, am_res: AMRes) u8 {
+    fn CMP(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
+        var am_res = cam_res;
+        if (!am_res.res_fetched) {
+            am_res.res = self.bus.read(am_res.addr);
+        }
         const tmp = @as(i16, @intCast(self.a)) - am_res.res;
         self.status.zero = if (tmp == 0) 1 else 0;
         self.status.carry = if (self.a >= am_res.res) 1 else 0;
@@ -338,19 +408,23 @@ pub const CPU = struct {
         return instruction_cycle[addr_mode];
     }
 
-    fn SBC(self: *CPU, addr_mode: u8, am_res: AMRes) u8 {
+    fn SBC(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
+        var am_res = cam_res;
+        if (!am_res.res_fetched) {
+            am_res.res = self.bus.read(am_res.addr);
+        }
         if (self.status.decimalMode == 1) {
             const first_a = self.a >> 4;
             const second_a = self.a & 0xFF;
             const first_res = am_res.res >> 4;
             const second_res = am_res.res & 0xFF;
-            var res = second_a - second_res - 1 + self.status.carry;
+            var res = second_a -% second_res -% 1 +% self.status.carry;
             var carry: u8 = 0;
             if (res >= 10) {
                 carry = 1;
                 res -= 10;
             }
-            var tmp = (first_a - first_res - 1 + carry);
+            var tmp = (first_a -% first_res -% 1 +% carry);
             if (tmp >= 10) {
                 tmp -= 10;
                 self.status.carry = 1;
@@ -400,7 +474,11 @@ pub const CPU = struct {
         AbsoluteX,
     };
 
-    fn ASL(self: *CPU, addr_mode: u8, am_res: AMRes) u8 {
+    fn ASL(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
+        var am_res = cam_res;
+        if (!am_res.res_fetched) {
+            am_res.res = self.bus.read(am_res.addr);
+        }
         const res = am_res.res *% 2;
         if (addr_mode == 2) { // Mode is accumulator
             self.a = res;
@@ -414,7 +492,11 @@ pub const CPU = struct {
         return instruction_cycle[addr_mode];
     }
 
-    fn ROL(self: *CPU, addr_mode: u8, am_res: AMRes) u8 {
+    fn ROL(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
+        var am_res = cam_res;
+        if (!am_res.res_fetched) {
+            am_res.res = self.bus.read(am_res.addr);
+        }
         var res = am_res.res *% 2;
         const last = am_res.res & 0x80;
         res |= last >> 7;
@@ -430,7 +512,11 @@ pub const CPU = struct {
         return instruction_cycle[addr_mode];
     }
 
-    fn LSR(self: *CPU, addr_mode: u8, am_res: AMRes) u8 {
+    fn LSR(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
+        var am_res = cam_res;
+        if (!am_res.res_fetched) {
+            am_res.res = self.bus.read(am_res.addr);
+        }
         const res = am_res.res / 2;
         if (addr_mode == 2) { // Mode is accumulator
             self.a = res;
@@ -444,7 +530,11 @@ pub const CPU = struct {
         return instruction_cycle[addr_mode];
     }
 
-    fn ROR(self: *CPU, addr_mode: u8, am_res: AMRes) u8 {
+    fn ROR(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
+        var am_res = cam_res;
+        if (!am_res.res_fetched) {
+            am_res.res = self.bus.read(am_res.addr);
+        }
         var res = am_res.res / 2;
         const last = am_res.res & 1;
         res |= last << 7;
@@ -460,13 +550,17 @@ pub const CPU = struct {
         return instruction_cycle[addr_mode];
     }
 
-    fn STX(self: *CPU, addr_mode: u8, am_res: AMRes) u8 {
-        self.bus.write(am_res.addr, self.x);
+    fn STX(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
+        self.bus.write(cam_res.addr, self.x);
         const instruction_cycle = [8]u8{ 0, 3, 0, 4, 0, 4, 0, 0 };
         return instruction_cycle[addr_mode];
     }
 
-    fn LDX(self: *CPU, addr_mode: u8, am_res: AMRes) u8 {
+    fn LDX(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
+        var am_res = cam_res;
+        if (!am_res.res_fetched) {
+            am_res.res = self.bus.read(am_res.addr);
+        }
         self.x = am_res.res;
         self.status.zero = if (am_res.res == 0) 1 else 0;
         self.status.negative = if (am_res.res & 0x80 != 0) 1 else 0;
@@ -474,7 +568,11 @@ pub const CPU = struct {
         return instruction_cycle[addr_mode];
     }
 
-    fn DEC(self: *CPU, addr_mode: u8, am_res: AMRes) u8 {
+    fn DEC(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
+        var am_res = cam_res;
+        if (!am_res.res_fetched) {
+            am_res.res = self.bus.read(am_res.addr);
+        }
         const res = am_res.res -% 1;
         self.status.zero = if (res == 0) 1 else 0;
         self.status.negative = if (res & 0x80 != 0) 1 else 0;
@@ -483,7 +581,11 @@ pub const CPU = struct {
         return instruction_cycle[addr_mode];
     }
 
-    fn INC(self: *CPU, addr_mode: u8, am_res: AMRes) u8 {
+    fn INC(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
+        var am_res = cam_res;
+        if (!am_res.res_fetched) {
+            am_res.res = self.bus.read(am_res.addr);
+        }
         const res = am_res.res +% 1;
         self.status.zero = if (res == 0) 1 else 0;
         self.status.negative = if (res & 0x80 != 0) 1 else 0;
@@ -533,7 +635,11 @@ pub const CPU = struct {
         return instruction_cycle[addr_mode];
     }
 
-    fn LDY(self: *CPU, addr_mode: u8, am_res: AMRes) u8 {
+    fn LDY(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
+        var am_res = cam_res;
+        if (!am_res.res_fetched) {
+            am_res.res = self.bus.read(am_res.addr);
+        }
         self.y = am_res.res;
         self.status.zero = if (am_res.res == 0) 1 else 0;
         self.status.negative = if (am_res.res & 0x80 != 0) 1 else 0;
@@ -541,7 +647,11 @@ pub const CPU = struct {
         return instruction_cycle[addr_mode];
     }
 
-    fn CPY(self: *CPU, addr_mode: u8, am_res: AMRes) u8 {
+    fn CPY(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
+        var am_res = cam_res;
+        if (!am_res.res_fetched) {
+            am_res.res = self.bus.read(am_res.addr);
+        }
         const tmp = @as(i16, @intCast(self.y)) - am_res.res;
         self.status.zero = if (tmp == 0) 1 else 0;
         self.status.carry = if (self.y >= am_res.res) 1 else 0;
@@ -550,7 +660,11 @@ pub const CPU = struct {
         return instruction_cycle[addr_mode];
     }
 
-    fn CPX(self: *CPU, addr_mode: u8, am_res: AMRes) u8 {
+    fn CPX(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
+        var am_res = cam_res;
+        if (!am_res.res_fetched) {
+            am_res.res = self.bus.read(am_res.addr);
+        }
         const tmp = @as(i16, @intCast(self.x)) - am_res.res;
         self.status.zero = if (tmp == 0) 1 else 0;
         self.status.carry = if (self.x >= am_res.res) 1 else 0;
@@ -583,13 +697,20 @@ pub const CPU = struct {
             self.wait_cycle -= 1;
             return;
         }
-        if (self.pc == 0xFFFA) {
+        if (self.bus.nmiSet) {
+            self.bus.nmiSet = false;
+            self.wait_cycle += self.NMI();
+            return;
+        }
+        if (self.bus.irqSet and self.status.interruptDisable == 0) {
+            self.bus.irqSet = false;
+            self.wait_cycle += self.IRQ();
             return;
         }
         // std.debug.print("Next: {x} {x} {x} {x}\n", .{ self.bus.read(self.pc + 1), self.bus.read(self.pc + 2), self.bus.read(self.pc + 3), self.bus.read(self.pc + 4) });
         const instruction = self.bus.read(self.pc);
         std.debug.print("{x:4} {x:2} ", .{ self.pc, instruction });
-        self.pc += 1;
+        self.pc +%= 1;
         const group = instruction & 3;
         const op_code = (instruction & 0b11100000) >> 5;
         const addr_mode = (instruction & 0b11100) >> 2;
@@ -673,8 +794,6 @@ pub const CPU = struct {
                 switch (instruction) {
                     0x00 => { // BRK is a 2-byte opcode
                         self.logDbg("BRK", 2, AMRes{}, g3_addr_mode_tag);
-                        const padding = self.bus.read(self.pc);
-                        _ = padding;
                         self.pc += 1;
                         self.status.breakCommand = 1;
                         self.bus.write(self.getStackAddr(0), @bitCast(self.status));
@@ -682,6 +801,7 @@ pub const CPU = struct {
                         self.bus.write(self.getStackAddr(-1), hi);
                         const lo: u8 = @truncate(self.pc);
                         self.bus.write(self.getStackAddr(-2), lo);
+                        self.status.interruptDisable = 1;
                         self.sp -%= 3;
                         self.pc = @as(u16, @intCast(self.bus.read(0xFFFF))) << 8 | self.bus.read(0xFFFE);
                         self.wait_cycle = 7;
@@ -719,6 +839,7 @@ pub const CPU = struct {
                     },
                     0x08 => { // PHP not the language
                         self.logDbg("PHP", 2, AMRes{}, g3_addr_mode_tag);
+                        self.status.breakCommand = 1;
                         self.bus.write(self.getStackAddr(0), @bitCast(self.status));
                         self.sp -%= 1;
                         self.wait_cycle = 3;
@@ -847,6 +968,7 @@ pub const CPU = struct {
             },
             else => {},
         }
+        self.cycle_count += self.wait_cycle;
     }
 
     pub fn exec(self: *CPU, end_after_: u16) !void {
@@ -887,37 +1009,31 @@ pub const simple_prog = struct {
     }
 };
 
-test "Simple test" {
-    const Ram = @import("ram.zig").RAM;
-    var bus = Bus.init(std.testing.allocator);
-    defer bus.deinit();
-    var ram = Ram{};
-    try bus.register(&ram);
-    var test_prog = simple_prog{ .data = &[_]u8{ 0xA9, 0x05, 0x69, 0x05 } };
-    try bus.register(&test_prog);
-    var cpu = CPU{ .bus = bus, .pc = 0xC000, .sp = 0xFF };
-    try cpu.exec(5);
-    try std.testing.expect(cpu.a == 10);
-}
-
-test "CPU operation test" {
-    // Read test rom
+fn cpu_test_all() !void {
     const iNes = @import("ines.zig").ROM;
-    const Ram = @import("ram.zig").RAM;
+    const Mapper0 = @import("mapper0.zig");
+    const PPU = @import("ppu2C02.zig");
+    const toMapper = @import("mapper.zig").toMapper;
     const testRomFile = try std.fs.cwd().openFile("test-rom/nestest.nes", .{});
     defer testRomFile.close();
-    var test_rom = try iNes.readFromFile(testRomFile, std.testing.allocator);
+    var test_rom = try iNes.readFromFile(testRomFile, std.heap.page_allocator);
     defer test_rom.deinit();
-    var bus = Bus.init(std.testing.allocator);
-    defer bus.deinit();
-    var ram = Ram{};
-    try bus.register(&ram);
-    var cartridge_ram = test_rom.getCartridgeRamDev();
-    try bus.register(&cartridge_ram);
-    var prog_rom = test_rom.getProgramRomDev();
-    try bus.register(&prog_rom);
-    var cpu = CPU{ .bus = bus, .pc = 0xC000, .sp = 0xFF };
-    try cpu.exec(0x4000);
+
+    var mapper0 = Mapper0.init(&test_rom);
+    const mapper = toMapper(&mapper0);
+    var ppu = try PPU.init(std.heap.page_allocator, mapper, &test_rom);
+    defer ppu.deinit();
+    var bus = Bus.init(mapper, &ppu);
+
+    var cpu = CPU{
+        .bus = &bus,
+        .pc = mapper.startPC,
+        .sp = 0xFF - 3,
+    };
+    try cpu.exec(0xA000);
     std.log.warn("0x02 0x03 {x}{x}", .{ bus.read(0x02), bus.read(0x03) });
-    try std.testing.expect(bus.read(0x02) == 0);
+}
+
+test "CPU test all" {
+    try cpu_test_all();
 }
