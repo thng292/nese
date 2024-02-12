@@ -50,74 +50,59 @@ pub fn main() !void {
     cpu.reset();
 
     var event: sdl.Event = undefined;
-    var start_frame = std.time.milliTimestamp();
     var run = true;
     var step = false;
-    var thread = try std.Thread.spawn(
-        .{ .allocator = std.heap.page_allocator },
-        nesLogic,
-        .{ &cpu, &ppu, &bus, &run, &step },
-    );
-    thread.detach();
-    while (true) {
-        while (sdl.pollEvent(&event)) {
-            switch (event.type) {
-                .quit => return,
-                .keydown => {
-                    switch (event.key.keysym.scancode) {
-                        .h => try ppu.printNametable1(),
-                        .p => run = !run,
-                        .s => {
-                            step = true;
-                            run = true;
-                        },
-                        else => {},
-                    }
-                },
-                else => {},
-            }
-        }
-
-        try renderer.setDrawColor(.{
-            .r = 255,
-            .g = 255,
-            .b = 255,
-            .a = 255,
-        });
-        try renderer.clear();
-        const now = std.time.milliTimestamp();
-        const fps = @as(f32, 1.0) / @as(f32, @floatFromInt(now - start_frame));
-        start_frame = now;
-        try drawFPS(renderer, fps);
-        renderer.present();
-        sdl.delay(16);
-    }
-}
-
-fn nesLogic(cpu: *CPU, ppu: *PPU, bus: *Bus, run: *bool, step: *bool) !void {
     const delay_time = std.time.ns_per_s / cpu_clock;
+
+    var start = std.time.nanoTimestamp();
     while (true) {
-        if (run.*) {
-            const start = std.time.nanoTimestamp();
+        if (run) {
             bus.nmiSet = ppu.nmiSend;
             ppu.nmiSend = false;
             try cpu.step();
-            ppu.clock();
-            ppu.clock();
-            ppu.clock();
-            const now = std.time.nanoTimestamp();
-            const elapsed = now - start;
-            const tmp: i32 = @truncate(@divTrunc(delay_time - elapsed, std.time.ns_per_ms));
-            sdl.delay(@bitCast(tmp));
+            inline for (0..3) |_| {
+                ppu.clock();
+            }
         }
-        if (step.*) {
-            step.* = false;
-            run.* = false;
+        if (step) {
+            step = false;
+            run = false;
+        }
+
+        if (ppu.cycle == 0 and ppu.scanline == 0) {
+            while (sdl.pollEvent(&event)) {
+                switch (event.type) {
+                    .quit => std.os.exit(0),
+                    .keydown => {
+                        switch (event.key.keysym.scancode) {
+                            .h => try ppu.printNametable1(),
+                            .p => run = !run,
+                            .s => {
+                                step = true;
+                                run = true;
+                            },
+                            else => {},
+                        }
+                    },
+                    else => {},
+                }
+            }
+            try renderer.setDrawColor(.{
+                .r = 255,
+                .g = 255,
+                .b = 255,
+                .a = 255,
+            });
+            try renderer.clear();
+            renderer.present();
+        }
+
+        const now = std.time.nanoTimestamp();
+        const elapsed = now - start;
+        start = now;
+        const tmp: i64 = @truncate(delay_time - elapsed);
+        if (tmp > 0) {
+            std.time.sleep(@bitCast(tmp));
         }
     }
-}
-
-fn drawFPS(renderer: *sdl.Renderer, fps: f32) !void {
-    _ = renderer;
-    _ = fps;
 }

@@ -22,8 +22,10 @@ addr_latch: bool,
 mirroring: Mapper.MirroringMode,
 allocator: std.mem.Allocator,
 data_buff: u8,
-scanline: i16 = 0,
-dot: i16 = 0,
+scanline: u16 = 0,
+cycle: u16 = 0,
+screen_addr: u16 = 0,
+even_frame: bool = true,
 nmiSend: bool = false,
 
 pub fn init(a: std.mem.Allocator, mapper: Mapper, rom: *Rom) !PPU {
@@ -57,24 +59,33 @@ pub fn deinit(self: *PPU) void {
     self.allocator.free(self.chr_rom);
 }
 
-pub fn clock(self: *PPU, renderer: *sdl.Renderer) void {
+pub fn clock(self: *PPU) void {
     const scanline_max_cycle = 341;
+    const max_scanline = 262;
 
-    if (self.scanline == 0 and self.dot == 0) {
-        self.dot = 1;
+    if (self.scanline == 0 and self.cycle == 0) {
+        self.even_frame = !self.even_frame;
     }
 
-    if (self.scanline == -1 and self.dot == 1) {
-        self.status.VBlank = false;
+    if (self.scanline == 241 and self.cycle == 1) {
+        self.status.VBlank = true;
+        self.nmiSend = self.ctrl.NMIEnable;
     }
 
-    self.dot += 1;
-    if (self.dot == scanline_max_cycle) {
+    if (self.scanline == 261 and self.cycle == 1) {
+        self.status = std.mem.zeroes(PPUSTATUS);
+    }
+
+    if (self.scanline < 240 or self.scanline == 261) {}
+
+    self.cycle += 1;
+    if (self.cycle == scanline_max_cycle) {
+        self.cycle = 0;
         self.scanline += 1;
-        self.dot = 0;
+        if (self.scanline == max_scanline) {
+            self.scanline = 0;
+        }
     }
-    self.nmiSend = self.scanline == 240 and self.ctrl.NMIEnable;
-    self.status.VBlank = self.scanline == 240;
 }
 
 pub fn printNametable1(self: *PPU) !void {
@@ -151,12 +162,28 @@ pub fn write(self: *PPU, addr: u16, data: u8) void {
     }
 }
 
+fn resolveNametableAddr(self: *PPU, addr: u16) u16 {
+    const ntaddr = addr - 0x2000;
+    var nametable_num = ntaddr / 0x400;
+    const ntindex = ntaddr % 0x400;
+    switch (self.mirroring) {
+        .Horizontal => {
+            const ntmap = [_]u8{ 0, 0, 1, 1 };
+            nametable_num = ntmap[nametable_num];
+        },
+        .Vertical => {
+            const ntmap = [_]u8{ 0, 1, 0, 1 };
+            nametable_num = ntmap[nametable_num];
+        },
+    }
+    return nametable_num * 0x400 + ntindex;
+}
+
 fn internalRead(self: *PPU, addr: u16) u8 {
     return switch (addr) {
         0x0000...0x1FFF => self.CHR_ROM[self.mapper.ppuDecode(addr)],
-        0x2000...0x27FF => self.nametable[addr - 0x2000],
-        0x2800...0x2FFF => self.nametable[addr - 0x2800],
-        0x3000...0x3EFF => self.nametable[addr - 0x3000],
+        0x2000...0x2FFF => self.nametable[self.resolveNametableAddr(addr)],
+        0x3000...0x3EFF => self.nametable[self.resolveNametableAddr(addr - 0x3000 + 0x2000)],
         0x3F00...0x3F0F => self.imagePalette[addr - 0x3F00],
         0x3F10...0x3F1F => self.spritePalette[addr - 0x3F10],
         0x3F20...0x3FFF => if (addr % 32 >= 16) self.spritePalette[addr % 16] else self.imagePalette[addr % 16],
@@ -168,9 +195,8 @@ fn internalWrite(self: *PPU, addr: u16, data: u8) void {
     //     std.debug.print("Writing to {x}\n", .{addr});
     return switch (addr) {
         0x0000...0x1FFF => self.CHR_ROM[self.mapper.ppuDecode(addr)] = data,
-        0x2000...0x27FF => self.nametable[addr - 0x2000] = data,
-        0x2800...0x2FFF => self.nametable[addr - 0x2800] = data,
-        0x3000...0x3EFF => self.nametable[addr - 0x3000] = data,
+        0x2000...0x2FFF => self.nametable[self.resolveNametableAddr(addr)] = data,
+        0x3000...0x3EFF => self.nametable[self.resolveNametableAddr(addr - 0x3000 + 0x2000)] = data,
         0x3F00...0x3F0F => self.imagePalette[addr - 0x3F00] = data,
         0x3F10...0x3F1F => self.spritePalette[addr - 0x3F10] = data,
         0x3F20...0x3FFF => {

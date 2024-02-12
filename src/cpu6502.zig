@@ -290,7 +290,7 @@ pub const CPU = struct {
     };
 
     fn logDbg(self: *CPU, instruction_name: []const u8, addr_mode: u8, am_res: AMRes, comptime enum_tag: type) void {
-        std.debug.print("{s} {s:16} res: {x:2} addr: {x:4}, c: {}, A: {x:2} X: {x:2} Y: {x:2} SP: {x:2} F: {b:8}\n", .{
+        std.log.debug("{s} {s:16} res: {x:2} addr: {x:4}, c: {}, A: {x:2} X: {x:2} Y: {x:2} SP: {x:2} F: {b:8}\n", .{
             instruction_name,
             @tagName(@as(enum_tag, (@enumFromInt(addr_mode)))),
             am_res.res,
@@ -709,7 +709,7 @@ pub const CPU = struct {
         }
         // std.debug.print("Next: {x} {x} {x} {x}\n", .{ self.bus.read(self.pc + 1), self.bus.read(self.pc + 2), self.bus.read(self.pc + 3), self.bus.read(self.pc + 4) });
         const instruction = self.bus.read(self.pc);
-        std.debug.print("{x:4} {x:2} ", .{ self.pc, instruction });
+        std.log.debug("{x:4} {x:2} ", .{ self.pc, instruction });
         self.pc +%= 1;
         const group = instruction & 3;
         const op_code = (instruction & 0b11100000) >> 5;
