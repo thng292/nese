@@ -16,7 +16,7 @@ const ppu_clock = 21477272 / 4;
 const cpu_clock = ppu_clock / 3;
 
 pub fn main() !void {
-    try sdl.init(.{ .audio = true, .video = true });
+    try sdl.init(sdl.InitFlags.everything);
     defer sdl.quit();
     const window = try sdl.Window.create(
         "nese",
@@ -24,7 +24,7 @@ pub fn main() !void {
         sdl.Window.pos_undefined,
         base_screen_w * 3,
         base_screen_h * 3,
-        .{ .opengl = true, .allow_highdpi = true },
+        .{ .allow_highdpi = true, .vulkan = true },
     );
     defer window.destroy();
     const renderer = try sdl.Renderer.create(window, -1, .{
@@ -33,35 +33,87 @@ pub fn main() !void {
     });
     defer renderer.destroy();
 
-    const testRomFile = try std.fs.cwd().openFile("test-rom/nestest.nes", .{});
+    const scale = 2;
+    const destiation_rect = sdl.Rect{
+        .x = 0,
+        .y = 0,
+        .h = base_screen_h * scale,
+        .w = base_screen_w * scale,
+    };
+    const game_screen = try renderer.createTexture(
+        .rgba8888,
+        .target,
+        base_screen_w,
+        base_screen_h,
+    );
+    defer game_screen.destroy();
+
+    // const testRomFile = try std.fs.cwd().openFile("test-rom/nestest.nes", .{});
+    const testRomFile = try std.fs.cwd().openFile("test-rom/donkey kong.nes", .{});
     defer testRomFile.close();
     var test_rom = try iNes.readFromFile(testRomFile, std.heap.page_allocator);
     defer test_rom.deinit();
 
     var mapper0 = Mapper0.init(&test_rom);
     const mapper = toMapper(&mapper0);
-    var ppu = try PPU.init(std.heap.page_allocator, mapper, &test_rom);
-    defer ppu.deinit();
+    var ppu = try PPU.init(mapper, &test_rom);
     var bus = Bus.init(mapper, &ppu);
     var cpu = CPU{
         .bus = &bus,
-        .sp = 0xFF - 3,
     };
     cpu.reset();
+
+    // for (0xFFFA..0x10000) |i| {
+    //     std.debug.print("{x}: {x}\n", .{ i, bus.read(@truncate(i)) });
+    // }
+    // std.os.exit(0);
 
     var event: sdl.Event = undefined;
     var run = true;
     var step = false;
-    const delay_time = std.time.ns_per_s / cpu_clock;
+    var counter: u128 = 0;
 
-    var start = std.time.nanoTimestamp();
+    var start = std.time.milliTimestamp();
     while (true) {
+        while (sdl.pollEvent(&event)) {
+            switch (event.type) {
+                .quit => std.os.exit(0),
+                .keydown => {
+                    switch (event.key.keysym.scancode) {
+                        .h => try ppu.printNametable1(),
+                        .p => run = !run,
+                        .s => {
+                            step = true;
+                            run = true;
+                        },
+                        else => {},
+                    }
+                },
+                else => {},
+            }
+        }
+
+        try renderer.setDrawColor(.{
+            .r = 255,
+            .g = 255,
+            .b = 255,
+            .a = 255,
+        });
+        try renderer.clear();
+
         if (run) {
-            bus.nmiSet = ppu.nmiSend;
-            ppu.nmiSend = false;
-            try cpu.step();
-            inline for (0..3) |_| {
-                ppu.clock();
+            // Run the whole frame at once
+            // Scanline by scanline
+            try renderer.setTarget(game_screen);
+            for (0..89342) |_| {
+                if (counter % 3 == 0) {
+                    bus.nmiSet = ppu.nmiSend;
+                    ppu.nmiSend = false;
+                    try cpu.step();
+                }
+                try ppu.clock(renderer);
+                // ppu.status.VBlank = true;
+                counter += 1;
             }
         }
         if (step) {
@@ -69,40 +121,17 @@ pub fn main() !void {
             run = false;
         }
 
-        if (ppu.cycle == 0 and ppu.scanline == 0) {
-            while (sdl.pollEvent(&event)) {
-                switch (event.type) {
-                    .quit => std.os.exit(0),
-                    .keydown => {
-                        switch (event.key.keysym.scancode) {
-                            .h => try ppu.printNametable1(),
-                            .p => run = !run,
-                            .s => {
-                                step = true;
-                                run = true;
-                            },
-                            else => {},
-                        }
-                    },
-                    else => {},
-                }
-            }
-            try renderer.setDrawColor(.{
-                .r = 255,
-                .g = 255,
-                .b = 255,
-                .a = 255,
-            });
-            try renderer.clear();
-            renderer.present();
-        }
+        try renderer.setTarget(null);
+        try renderer.copyEx(game_screen, null, &destiation_rect, 0, null, .none);
+        renderer.present();
 
-        const now = std.time.nanoTimestamp();
+        const now = std.time.milliTimestamp();
         const elapsed = now - start;
         start = now;
-        const tmp: i64 = @truncate(delay_time - elapsed);
+        const tmp = 16 - elapsed;
         if (tmp > 0) {
-            std.time.sleep(@bitCast(tmp));
+            const tt: u64 = @bitCast(tmp);
+            sdl.delay(@truncate(tt));
         }
     }
 }

@@ -1,3 +1,6 @@
 zig-*
 libs
 !build.zig
+test-rom
+!nestest.nes
+out.txt

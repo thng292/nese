@@ -6,65 +6,114 @@ const Bus = @import("bus.zig").Bus;
 
 const PPU = @This();
 mapper: Mapper,
-ctrl: PPUCTRL,
-mask: PPUMASK,
-status: PPUSTATUS,
-chr_rom: []Title,
-CHR_ROM: []u8,
-nametable: [2048]u8,
-spritePalette: [16]u8,
-imagePalette: [16]u8,
-data: u8,
-scroll_offset_x: u8,
-scroll_offset_y: u8,
-addr_buff: u16,
-addr_latch: bool,
-mirroring: Mapper.MirroringMode,
-allocator: std.mem.Allocator,
-data_buff: u8,
-scanline: u16 = 0,
-cycle: u16 = 0,
-screen_addr: u16 = 0,
-even_frame: bool = true,
+mirroring: Mapper.MirroringMode = .Vertical,
+
+ctrl: PPUCTRL = std.mem.zeroes(PPUCTRL),
+mask: PPUMASK = std.mem.zeroes(PPUMASK),
+status: PPUSTATUS = std.mem.zeroes(PPUSTATUS),
 nmiSend: bool = false,
 
-pub fn init(a: std.mem.Allocator, mapper: Mapper, rom: *Rom) !PPU {
-    const noTitles = rom.CHR_RomBanks.len / 16;
-    const chr_rom = try a.alloc(Title, noTitles);
-    for (0..noTitles) |i| {
-        chr_rom[i] = Title.init(rom.CHR_RomBanks[i * 16 .. (i + 1) * 16]);
-    }
+CHR_ROM: []u8,
+nametable: [2048]u8 = undefined,
+spritePalette: [16]u8 = undefined,
+imagePalette: [16]u8 = undefined,
+
+data: u8 = 0,
+addr_latch: bool = false,
+data_buff: u8 = 0,
+
+scanline: u16 = 0,
+cycle: u16 = 0,
+vreg: VRamAddr = std.mem.zeroes(VRamAddr),
+treg: VRamAddr = std.mem.zeroes(VRamAddr),
+fine_x: u3 = 0,
+even_frame: bool = true,
+
+render_cache: RenderCache = RenderCache{},
+
+pub fn init(mapper: Mapper, rom: *Rom) !PPU {
+    // const noTitles = rom.CHR_RomBanks.len / 16;
+    // const chr_rom = try a.alloc(Title, noTitles);
+    // for (0..noTitles) |i| {
+    //     chr_rom[i] = Title.init(rom.CHR_RomBanks[i * 16 .. (i + 1) * 16]);
+    // }
     return PPU{
         .mapper = mapper,
-        .chr_rom = chr_rom,
         .CHR_ROM = rom.CHR_RomBanks,
-        .nametable = undefined,
-        .spritePalette = undefined,
-        .imagePalette = undefined,
-        .ctrl = std.mem.zeroes(PPUCTRL),
-        .mask = std.mem.zeroes(PPUMASK),
-        .status = std.mem.zeroes(PPUSTATUS),
-        .data = 0,
-        .scroll_offset_x = 0,
-        .scroll_offset_y = 0,
-        .addr_buff = 0,
-        .addr_latch = false,
-        .mirroring = .Vertical,
-        .allocator = a,
-        .data_buff = 0,
     };
 }
 
-pub fn deinit(self: *PPU) void {
-    self.allocator.free(self.chr_rom);
+inline fn fetchRenderData(self: *PPU) void {
+    if (self.vreg.coarse_x != self.render_cache.coarse_x or self.render_cache.first_time) {
+        const vreg: u16 = @bitCast(self.vreg);
+        const title_id: u32 = self.internalRead(0x2000 + (vreg & 0x0FFF));
+        const CHR_index = title_id * 16 + @as(u32, self.ctrl.BGPatternTableAddr) * 0x1000;
+        self.render_cache.lsb = self.CHR_ROM[CHR_index + self.vreg.fine_y];
+        self.render_cache.msb = self.CHR_ROM[CHR_index + 8 + self.vreg.fine_y];
+        var attrbute_index: u16 = self.vreg.coarse_x >> 2;
+        const tmp: u6 = self.vreg.coarse_y >> 2;
+        attrbute_index |= tmp << 3;
+        attrbute_index |= @as(u16, self.vreg.nametable_y) << 11;
+        attrbute_index |= @as(u16, self.vreg.nametable_x) << 10;
+        var current_attrbute = self.internalRead(0x23C0 | attrbute_index);
+        if (self.vreg.coarse_y & 0b10 != 0) {
+            current_attrbute >>= 4;
+        }
+        if (self.vreg.coarse_x & 0b10 != 0) {
+            current_attrbute >>= 2;
+        }
+        current_attrbute &= 0b11;
+        self.render_cache.attr = @truncate(current_attrbute);
+        self.render_cache.first_time = false;
+    }
 }
 
-pub fn clock(self: *PPU) void {
+inline fn IncX(self: *PPU) void {
+    if (!self.mask.ShowBG and !self.mask.ShowSprite) {
+        return;
+    }
+    if (self.fine_x == 7) {
+        self.fine_x = 0;
+        if (self.vreg.coarse_x == 31) {
+            self.vreg.coarse_x = 0;
+            self.vreg.nametable_x = ~self.vreg.nametable_x;
+        } else {
+            self.vreg.coarse_x += 1;
+        }
+    } else {
+        self.fine_x += 1;
+    }
+}
+
+inline fn IncY(self: *PPU) void {
+    if (!self.mask.ShowBG and !self.mask.ShowSprite) {
+        return;
+    }
+
+    if (self.vreg.fine_y < 7) {
+        self.vreg.fine_y += 1;
+    } else {
+        self.vreg.fine_y = 0;
+        if (self.vreg.coarse_y == 29) {
+            self.vreg.coarse_y = 0;
+            self.vreg.nametable_y = ~self.vreg.nametable_y;
+        } else {
+            self.vreg.coarse_y +%= 1;
+        }
+    }
+}
+
+pub fn clock(self: *PPU, renderer: *sdl.Renderer) !void {
     const scanline_max_cycle = 341;
     const max_scanline = 262;
 
     if (self.scanline == 0 and self.cycle == 0) {
         self.even_frame = !self.even_frame;
+        self.mirroring = self.mapper.getMirroringMode();
+    }
+
+    if (self.cycle == 0) {
+        self.cycle = 1;
     }
 
     if (self.scanline == 241 and self.cycle == 1) {
@@ -72,19 +121,47 @@ pub fn clock(self: *PPU) void {
         self.nmiSend = self.ctrl.NMIEnable;
     }
 
-    if (self.scanline == 261 and self.cycle == 1) {
-        self.status = std.mem.zeroes(PPUSTATUS);
+    // if (self.scanline == self.mapper.getNMIScanline()) {
+    //     self.nmiSend = self.ctrl.NMIEnable;
+    // }
+
+    if (self.scanline == 261) {
+        if (self.cycle == 1) {
+            self.status = std.mem.zeroes(PPUSTATUS);
+        }
+        // if (self.cycle >= 280 and self.cycle <= 304) {
+        if (self.mask.ShowBG or self.mask.ShowSprite) {
+            self.vreg.fine_y = self.treg.fine_y;
+            self.vreg.coarse_y = self.treg.coarse_y;
+            self.vreg.nametable_y = self.treg.nametable_y;
+        }
+        // }
     }
 
-    if (self.scanline < 240 or self.scanline == 261) {}
+    if (self.cycle == 256) {
+        self.IncY();
+        if (self.mask.ShowBG or self.mask.ShowSprite) {
+            self.vreg.coarse_x = self.treg.coarse_x;
+            self.vreg.nametable_x = self.treg.nametable_x;
+        }
+    }
+
+    if (self.scanline < 240 and self.cycle <= 256 and self.mask.ShowBG) {
+        // Draw dot @ self.vreg
+        self.fetchRenderData();
+        var pixel: u8 = self.render_cache.attr << 2;
+        pixel |= (self.render_cache.lsb >> (7 - self.fine_x)) & 0b1;
+        pixel |= ((self.render_cache.msb >> (7 - self.fine_x)) << 1) & 0b10;
+        try renderer.setDrawColor(colors[self.imagePalette[pixel]]);
+        try renderer.drawPoint(self.cycle - 1, self.scanline);
+        self.IncX();
+    }
 
     self.cycle += 1;
     if (self.cycle == scanline_max_cycle) {
         self.cycle = 0;
         self.scanline += 1;
-        if (self.scanline == max_scanline) {
-            self.scanline = 0;
-        }
+        self.scanline %= max_scanline;
     }
 }
 
@@ -113,13 +190,15 @@ pub fn read(self: *PPU, addr: u16) u8 {
         0x2004 => self.data, // OAM SHIT HERE
         0x2007 => blk: {
             var res = self.data_buff;
-            self.data_buff = self.internalRead(self.addr_buff);
+            var tmp: u16 = @bitCast(self.vreg);
+            self.data_buff = self.internalRead(tmp & 0x3FFF);
 
-            if (self.addr_buff >= 0x3F00) {
+            if (tmp >= 0x3F00) {
                 res = self.data_buff;
             }
 
-            self.addr_buff += if (self.ctrl.VRAMAddrInc) 32 else 1;
+            tmp += if (self.ctrl.VRAMAddrInc) 32 else 1;
+            self.vreg = @bitCast(tmp);
             break :blk res;
         },
         else => 0,
@@ -129,34 +208,45 @@ pub fn read(self: *PPU, addr: u16) u8 {
 pub fn write(self: *PPU, addr: u16, data: u8) void {
     //     std.debug.print("CPU writing to {x}\n", .{addr});
     switch (addr) {
-        0x2000 => self.ctrl = @bitCast(data),
+        0x2000 => {
+            self.ctrl = @bitCast(data);
+            self.treg.nametable_x = self.ctrl.nametable_x;
+            self.treg.nametable_y = self.ctrl.nametable_y;
+        },
         0x2001 => self.mask = @bitCast(data),
         0x2003 => {}, // OAM SHIT
         0x2004 => {}, // OAM SHIT HERE
         0x2005 => {
             if (self.addr_latch) {
-                self.scroll_offset_y = data;
+                self.treg.coarse_y = @truncate(data >> 3);
+                self.treg.fine_y = @truncate(data & 0b111);
             } else {
                 if (data <= 239) {
-                    self.scroll_offset_x = data;
+                    self.treg.coarse_x = @truncate(data >> 3);
+                    self.fine_x = @truncate(data & 0b111);
                 }
             }
             self.addr_latch = !self.addr_latch;
         },
         0x2006 => {
             const tmp: u16 = data;
+            var treg: u16 = @bitCast(self.treg);
             if (self.addr_latch) { // Lo byte
-                self.addr_buff &= 0xFF00;
-                self.addr_buff |= tmp;
+                treg &= 0xFF00;
+                treg |= tmp;
+                self.vreg = @bitCast(treg);
             } else { // Hi byte
-                self.addr_buff &= 0x00FF;
-                self.addr_buff |= tmp << 8;
+                treg &= 0x003F;
+                treg |= tmp << 8;
             }
+            self.treg = @bitCast(treg);
             self.addr_latch = !self.addr_latch;
         },
         0x2007 => {
-            self.internalWrite(self.addr_buff, data);
-            self.addr_buff += if (self.ctrl.VRAMAddrInc) 32 else 1;
+            var tmp: u16 = @bitCast(self.vreg);
+            self.internalWrite(tmp & 0x3FFF, data);
+            tmp += if (self.ctrl.VRAMAddrInc) 32 else 1;
+            self.vreg = @bitCast(tmp);
         },
         else => {},
     }
@@ -179,6 +269,16 @@ fn resolveNametableAddr(self: *PPU, addr: u16) u16 {
     return nametable_num * 0x400 + ntindex;
 }
 
+const transparent_idx = [_]u8{ 0, 4, 8, 12 };
+fn find(arr: []const u8, pred: anytype) bool {
+    for (arr) |elem| {
+        if (elem == pred) {
+            return true;
+        }
+    }
+    return false;
+}
+
 fn internalRead(self: *PPU, addr: u16) u8 {
     return switch (addr) {
         0x0000...0x1FFF => self.CHR_ROM[self.mapper.ppuDecode(addr)],
@@ -186,13 +286,26 @@ fn internalRead(self: *PPU, addr: u16) u8 {
         0x3000...0x3EFF => self.nametable[self.resolveNametableAddr(addr - 0x3000 + 0x2000)],
         0x3F00...0x3F0F => self.imagePalette[addr - 0x3F00],
         0x3F10...0x3F1F => self.spritePalette[addr - 0x3F10],
-        0x3F20...0x3FFF => if (addr % 32 >= 16) self.spritePalette[addr % 16] else self.imagePalette[addr % 16],
-        else => 0,
+        0x3F20...0x3FFF => blk: {
+            const real_addr = addr - 0x3F20;
+            const tmp = real_addr % 16;
+            if (real_addr % 32 >= 16) {
+                if (find(&transparent_idx, tmp)) {
+                    break :blk self.spritePalette[0];
+                }
+                break :blk self.spritePalette[tmp];
+            } else {
+                if (find(&transparent_idx, tmp)) {
+                    break :blk self.imagePalette[0];
+                }
+                break :blk self.imagePalette[tmp];
+            }
+        },
+        else => unreachable,
     };
 }
 
 fn internalWrite(self: *PPU, addr: u16, data: u8) void {
-    //     std.debug.print("Writing to {x}\n", .{addr});
     return switch (addr) {
         0x0000...0x1FFF => self.CHR_ROM[self.mapper.ppuDecode(addr)] = data,
         0x2000...0x2FFF => self.nametable[self.resolveNametableAddr(addr)] = data,
@@ -200,18 +313,48 @@ fn internalWrite(self: *PPU, addr: u16, data: u8) void {
         0x3F00...0x3F0F => self.imagePalette[addr - 0x3F00] = data,
         0x3F10...0x3F1F => self.spritePalette[addr - 0x3F10] = data,
         0x3F20...0x3FFF => {
-            if (addr % 32 >= 16) {
-                self.spritePalette[addr % 16] = data;
+            const real_addr = addr - 0x3F20;
+            const tmp = real_addr % 16;
+            if (real_addr % 32 >= 16) {
+                self.spritePalette[tmp] = data;
+                if (find(&transparent_idx, tmp)) {
+                    for (transparent_idx) |i| {
+                        self.spritePalette[i] = data;
+                    }
+                }
             } else {
-                self.imagePalette[addr % 16] = data;
+                self.imagePalette[tmp] = data;
+                if (find(&transparent_idx, tmp)) {
+                    for (transparent_idx) |i| {
+                        self.imagePalette[i] = data;
+                    }
+                }
             }
         },
-        else => {},
+        else => unreachable,
     };
 }
 
+const RenderCache = struct {
+    coarse_x: u5 = 0,
+    lsb: u8 = 0,
+    msb: u8 = 0,
+    attr: u4 = 0,
+    first_time: bool = true,
+};
+
+const VRamAddr = packed struct(u16) {
+    coarse_x: u5,
+    coarse_y: u5,
+    nametable_x: u1,
+    nametable_y: u1,
+    fine_y: u3,
+    _pad: u1,
+};
+
 const PPUCTRL = packed struct(u8) {
-    BaseNameTableAddr: u2,
+    nametable_x: u1,
+    nametable_y: u1,
     VRAMAddrInc: bool,
     SpritePatternTableAddr: u1,
     BGPatternTableAddr: u1,
@@ -277,18 +420,19 @@ const Title = struct {
         return (tmp >> (index % 4 * 2)) & 0x0F;
     }
 
-    pub fn draw(self: *Title, renderer: *sdl.Renderer, pos_x: i32, pos_y: i32, scale: u8) !void {
+    pub fn draw(self: *Title, renderer: *sdl.Renderer, pos_x: i32, pos_y: i32, attribute: u2) !void {
+        const attr: u4 = attribute;
         for (0..8) |y| {
             const yy: i32 = @truncate(y);
             for (0..8) |x| {
                 const xx: i32 = @truncate(x);
-                try renderer.setDrawColor(colors[self.get(y * 8 + x)]);
-                try renderer.fillRect(.{
-                    .w = scale,
-                    .h = scale,
-                    .x = xx * scale + pos_x,
-                    .y = yy * scale + pos_y,
-                });
+                var colorIndex = self.get(y * 8 + x);
+                if (colorIndex == 0) {
+                    continue;
+                }
+                colorIndex |= attr << 2;
+                try renderer.setDrawColor(colors[colorIndex]);
+                try renderer.drawPoint(xx + pos_x, yy + pos_y);
             }
         }
     }

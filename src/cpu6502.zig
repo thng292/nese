@@ -7,7 +7,7 @@ pub const CPU = struct {
     x: u8 = 0,
     y: u8 = 0,
     pc: u16 = 0,
-    sp: u8 = 0xFF,
+    sp: u8 = 0xFF - 3,
     status: CPUStatus = CPUStatus{},
     wait_cycle: u8 = 0,
     cycle_count: u64 = 0,
@@ -68,28 +68,30 @@ pub const CPU = struct {
     fn NMI(self: *CPU) u8 {
         var tmp = self.status;
         tmp.breakCommand = 0;
-        self.bus.write(self.getStackAddr(0), @bitCast(tmp));
-        self.bus.write(self.getStackAddr(-1), @truncate(self.pc));
-        self.bus.write(self.getStackAddr(-2), @truncate(self.pc >> 8));
         self.sp -= 3;
+        self.bus.write(self.getStackAddr(0), @bitCast(tmp));
+        self.bus.write(self.getStackAddr(1), @truncate(self.pc));
+        self.bus.write(self.getStackAddr(2), @truncate(self.pc >> 8));
         self.status.interruptDisable = 1;
         var nmi_handler_addr: u16 = self.bus.read(0xFFFA);
         nmi_handler_addr |= @as(u16, @intCast(self.bus.read(0xFFFB))) << 8;
         self.pc = nmi_handler_addr;
+        self.logDbg("NMI", 0, AMRes{ .addr = nmi_handler_addr }, g1_addr_mode_tag);
         return 7;
     }
 
     fn IRQ(self: *CPU) u8 {
         var tmp = self.status;
         tmp.breakCommand = 0;
-        self.bus.write(self.getStackAddr(0), @bitCast(tmp));
-        self.bus.write(self.getStackAddr(-1), @truncate(self.pc));
-        self.bus.write(self.getStackAddr(-2), @truncate(self.pc >> 8));
         self.sp -= 3;
+        self.bus.write(self.getStackAddr(0), @bitCast(tmp));
+        self.bus.write(self.getStackAddr(1), @truncate(self.pc));
+        self.bus.write(self.getStackAddr(2), @truncate(self.pc >> 8));
         self.status.interruptDisable = 1;
-        var nmi_handler_addr: u16 = self.bus.read(0xFFFE);
-        nmi_handler_addr |= @as(u16, @intCast(self.bus.read(0xFFFF))) << 8;
-        self.pc = nmi_handler_addr;
+        var irq_handler_addr: u16 = self.bus.read(0xFFFE);
+        irq_handler_addr |= @as(u16, @intCast(self.bus.read(0xFFFF))) << 8;
+        self.pc = irq_handler_addr;
+        self.logDbg("IRQ", 0, AMRes{ .addr = irq_handler_addr }, g1_addr_mode_tag);
         return 7;
     }
 
@@ -290,7 +292,8 @@ pub const CPU = struct {
     };
 
     fn logDbg(self: *CPU, instruction_name: []const u8, addr_mode: u8, am_res: AMRes, comptime enum_tag: type) void {
-        std.log.debug("{s} {s:16} res: {x:2} addr: {x:4}, c: {}, A: {x:2} X: {x:2} Y: {x:2} SP: {x:2} F: {b:8}\n", .{
+        std.log.debug("{x:4} {s} {s:16} res: {x:2} addr: {x:4}, c: {}, A: {x:2} X: {x:2} Y: {x:2} SP: {x:2} F: {b:8}", .{
+            self.pc,
             instruction_name,
             @tagName(@as(enum_tag, (@enumFromInt(addr_mode)))),
             am_res.res,
@@ -709,7 +712,6 @@ pub const CPU = struct {
         }
         // std.debug.print("Next: {x} {x} {x} {x}\n", .{ self.bus.read(self.pc + 1), self.bus.read(self.pc + 2), self.bus.read(self.pc + 3), self.bus.read(self.pc + 4) });
         const instruction = self.bus.read(self.pc);
-        std.log.debug("{x:4} {x:2} ", .{ self.pc, instruction });
         self.pc +%= 1;
         const group = instruction & 3;
         const op_code = (instruction & 0b11100000) >> 5;
