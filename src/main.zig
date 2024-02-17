@@ -72,6 +72,7 @@ pub fn main() !void {
     var run = true;
     var step = false;
     var counter: u128 = 0;
+    const dot_per_frame = 341 * 262;
 
     var start = std.time.milliTimestamp();
     while (true) {
@@ -105,15 +106,20 @@ pub fn main() !void {
             // Run the whole frame at once
             // Scanline by scanline
             try renderer.setTarget(game_screen);
-            for (0..89342) |_| {
+            for (0..dot_per_frame) |_| {
                 if (counter % 3 == 0) {
-                    bus.nmiSet = ppu.nmiSend;
-                    ppu.nmiSend = false;
+                    if (ppu.nmiSend) {
+                        bus.nmiSet = true;
+                        ppu.nmiSend = false;
+                    }
                     try cpu.step();
                 }
                 try ppu.clock(renderer);
                 // ppu.status.VBlank = true;
                 counter += 1;
+                if (counter == 1_000_000) {
+                    std.os.exit(0);
+                }
             }
         }
         if (step) {

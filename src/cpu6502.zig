@@ -9,15 +9,15 @@ pub const CPU = struct {
     pc: u16 = 0,
     sp: u8 = 0xFF - 3,
     status: CPUStatus = CPUStatus{},
-    wait_cycle: u8 = 0,
-    cycle_count: u64 = 0,
+    wait_cycle: u8 = 7,
+    cycle_count: u64 = 7,
 
     const CPUStatus = packed struct(u8) {
         carry: u1 = 0,
         zero: u1 = 0,
         interruptDisable: u1 = 0,
         decimalMode: u1 = 0,
-        breakCommand: u1 = 1,
+        breakCommand: u1 = 0,
         reserved: u1 = 1,
         overflow: u1 = 0,
         negative: u1 = 0,
@@ -29,8 +29,8 @@ pub const CPU = struct {
         self.y = 0;
         self.sp = 0xFF - 3;
         self.status = CPUStatus{};
-        self.wait_cycle = 0;
-        self.cycle_count = 0;
+        self.wait_cycle = 7;
+        self.cycle_count = 7;
         self.pc = self.bus.read(0xFFFC);
         var tmp: u16 = self.bus.read(0xFFFD);
         tmp <<= 8;
@@ -269,17 +269,6 @@ pub const CPU = struct {
         };
     }
 
-    const g1_addr_mode = [8](*const fn (self: *CPU) AMRes){
-        CPU.AM_IndexedIndirect, // indirect, x
-        CPU.AM_ZeroPage,
-        CPU.AM_Immediate,
-        CPU.AM_Absolute,
-        CPU.AM_IndirectIndexed, // indirect, y
-        CPU.AM_ZeroPageX,
-        CPU.AM_AbsoluteY,
-        CPU.AM_AbsoluteX,
-    };
-
     const g1_addr_mode_tag = enum(u8) {
         IndexedIndirect,
         ZeroPage,
@@ -292,19 +281,29 @@ pub const CPU = struct {
     };
 
     fn logDbg(self: *CPU, instruction_name: []const u8, addr_mode: u8, am_res: AMRes, comptime enum_tag: type) void {
-        std.log.debug("{x:4} {s} {s:16} res: {x:2} addr: {x:4}, c: {}, A: {x:2} X: {x:2} Y: {x:2} SP: {x:2} F: {b:8}", .{
-            self.pc,
-            instruction_name,
-            @tagName(@as(enum_tag, (@enumFromInt(addr_mode)))),
-            am_res.res,
-            am_res.addr,
-            self.cycle_count,
-            self.a,
-            self.x,
-            self.y,
-            self.sp,
-            @as(u8, @bitCast(self.status)),
-        });
+        if (comptime @import("builtin").mode != .Debug) {
+            return;
+        }
+        if (true) {
+            std.debug.print("{X:0>4} {s} {s:16} r:{X:0>2} a:{X:0>4},A:{X:0>2} X:{X:0>2} Y:{X:0>2} SP:{X:0>2} F:{X:0>2},2002:{X:0>2},PPU:{d:3},{d:3},CYC:{}\n", .{
+                self.pc,
+                instruction_name,
+                @tagName(@as(enum_tag, (@enumFromInt(addr_mode)))),
+                am_res.res,
+                am_res.addr,
+                self.a,
+                self.x,
+                self.y,
+                self.sp,
+                @as(u8, @bitCast(self.status)),
+                @as(u8, @bitCast(self.bus.ppu.status)),
+                self.bus.ppu.scanline,
+                self.bus.ppu.cycle,
+                self.cycle_count,
+            });
+        } else {
+            std.debug.print("{s}\n", .{instruction_name});
+        }
     }
 
     fn ORA(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
@@ -313,6 +312,8 @@ pub const CPU = struct {
             am_res.res = self.bus.read(am_res.addr);
         }
         self.a |= am_res.res;
+        self.status.zero = if (self.a == 0) 1 else 0;
+        self.status.negative = if ((self.a >> 7) != 0) 1 else 0;
         const instruction_cycle = [8]u8{ 6, 3, 2, 4, 5, 4, 4, 4 };
         return instruction_cycle[addr_mode];
     }
@@ -323,6 +324,8 @@ pub const CPU = struct {
             am_res.res = self.bus.read(am_res.addr);
         }
         self.a &= am_res.res;
+        self.status.zero = if (self.a == 0) 1 else 0;
+        self.status.negative = if ((self.a >> 7) != 0) 1 else 0;
         const instruction_cycle = [8]u8{ 6, 3, 2, 4, 5, 4, 4, 4 };
         return instruction_cycle[addr_mode];
     }
@@ -333,6 +336,8 @@ pub const CPU = struct {
             am_res.res = self.bus.read(am_res.addr);
         }
         self.a ^= am_res.res;
+        self.status.zero = if (self.a == 0) 1 else 0;
+        self.status.negative = if ((self.a >> 7) != 0) 1 else 0;
         const instruction_cycle = [8]u8{ 6, 3, 2, 4, 5, 4, 4, 4 };
         return instruction_cycle[addr_mode];
     }
@@ -342,7 +347,7 @@ pub const CPU = struct {
         if (!am_res.res_fetched) {
             am_res.res = self.bus.read(am_res.addr);
         }
-        if (self.status.decimalMode == 1) {
+        if (self.status.decimalMode == 1 and false) {
             const first_a = self.a >> 4;
             const second_a = self.a & 0xFF;
             const first_res = am_res.res >> 4;
@@ -416,7 +421,7 @@ pub const CPU = struct {
         if (!am_res.res_fetched) {
             am_res.res = self.bus.read(am_res.addr);
         }
-        if (self.status.decimalMode == 1) {
+        if (self.status.decimalMode == 1 and false) {
             const first_a = self.a >> 4;
             const second_a = self.a & 0xFF;
             const first_res = am_res.res >> 4;
@@ -454,17 +459,6 @@ pub const CPU = struct {
         const instruction_cycle = [8]u8{ 6, 3, 2, 4, 5, 4, 4, 4 };
         return instruction_cycle[addr_mode];
     }
-
-    const g2_addr_mode = [8](*const fn (self: *CPU) AMRes){
-        CPU.AM_Immediate,
-        CPU.AM_ZeroPage,
-        CPU.AM_Accumulator,
-        CPU.AM_Absolute,
-        CPU.AM_None,
-        CPU.AM_ZeroPageX,
-        CPU.AM_None,
-        CPU.AM_AbsoluteX,
-    };
 
     const g2_addr_mode_tag = enum(u8) {
         Immediate,
@@ -539,15 +533,15 @@ pub const CPU = struct {
             am_res.res = self.bus.read(am_res.addr);
         }
         var res = am_res.res / 2;
-        const last = am_res.res & 1;
-        res |= last << 7;
+        const carry = am_res.res & 1;
+        res |= @as(u8, self.status.carry) << 7;
         if (addr_mode == 2) { // Mode is accumulator
             self.a = res;
         } else {
             self.bus.write(am_res.addr, res);
         }
         self.status.zero = if (res == 0) 1 else 0;
-        self.status.carry = if (am_res.res & 0x80 != 0) 1 else 0;
+        self.status.carry = if (carry != 0) 1 else 0;
         self.status.negative = if (res & 0x80 != 0) 1 else 0;
         const instruction_cycle = [8]u8{ 0, 5, 2, 6, 0, 6, 0, 7 };
         return instruction_cycle[addr_mode];
@@ -719,36 +713,46 @@ pub const CPU = struct {
         switch (group) {
             // Group 1
             0b01 => {
-                const am_res = g1_addr_mode[addr_mode](self);
-                const g1_instruction = [8](*const fn (*CPU, u8, AMRes) u8){
-                    CPU.ORA, CPU.AND, CPU.EOR, CPU.ADC, CPU.STA, CPU.LDA, CPU.CMP, CPU.SBC,
+                const am_res = switch (@as(g1_addr_mode_tag, @enumFromInt(addr_mode))) {
+                    .IndexedIndirect => self.AM_IndexedIndirect(),
+                    .ZeroPage => self.AM_ZeroPage(),
+                    .Immediate => self.AM_Immediate(),
+                    .Absolute => self.AM_Absolute(),
+                    .IndirectIndexed => self.AM_IndirectIndexed(),
+                    .ZeroPageX => self.AM_ZeroPageX(),
+                    .AbsoluteY => self.AM_AbsoluteY(),
+                    .AbsoluteX => self.AM_AbsoluteX(),
                 };
                 const g1_instruction_str = [_][]const u8{
                     "ORA", "AND", "EOR", "ADC", "STA", "LDA", "CMP", "SBC",
                 };
                 self.logDbg(g1_instruction_str[op_code], addr_mode, am_res, g1_addr_mode_tag);
-                self.wait_cycle = g1_instruction[op_code](self, addr_mode, am_res) + am_res.additionalCycle;
+                self.wait_cycle = switch (op_code) {
+                    0 => self.ORA(addr_mode, am_res),
+                    1 => self.AND(addr_mode, am_res),
+                    2 => self.EOR(addr_mode, am_res),
+                    3 => self.ADC(addr_mode, am_res),
+                    4 => self.STA(addr_mode, am_res),
+                    5 => self.LDA(addr_mode, am_res),
+                    6 => self.CMP(addr_mode, am_res),
+                    7 => self.SBC(addr_mode, am_res),
+                    else => 0,
+                };
+                self.wait_cycle += am_res.additionalCycle;
             },
             // Group 2
             0b10 => {
-                var am_res: AMRes = undefined;
-                if (op_code == 4 or op_code == 5) { // LDX and STX exception
-                    if (addr_mode == 5) {
-                        am_res = self.AM_ZeroPageY();
-                    }
-                    if (addr_mode == 7) {
-                        am_res = self.AM_AbsoluteY();
-                    }
-                    am_res = g2_addr_mode[addr_mode](self);
-                } else {
-                    am_res = g2_addr_mode[addr_mode](self);
-                }
-                const g2_instruction = [8](*const fn (*CPU, u8, AMRes) u8){
-                    CPU.ASL, CPU.ROL, CPU.LSR, CPU.ROR, CPU.STX, CPU.LDX, CPU.DEC, CPU.INC,
+                const am_res = switch (@as(g2_addr_mode_tag, @enumFromInt(addr_mode))) {
+                    .Immediate => self.AM_Immediate(),
+                    .ZeroPage => self.AM_ZeroPage(),
+                    .Accumulator => self.AM_Accumulator(),
+                    .Absolute => self.AM_Absolute(),
+                    .None => AMRes{},
+                    .ZeroPageX => if (op_code == 4 or op_code == 5) self.AM_ZeroPageY() else self.AM_ZeroPageX(),
+                    .Nono2 => AMRes{},
+                    .AbsoluteX => if (op_code == 4 or op_code == 5) self.AM_AbsoluteY() else self.AM_AbsoluteX(),
                 };
-                const g2_instruction_str = [_][]const u8{
-                    "ASL", "ROL", "LSR", "ROR", "STX", "LDX", "DEC", "INC",
-                };
+
                 switch (instruction) {
                     0x8A => { // TXA
                         self.logDbg("TXA", addr_mode, am_res, g2_addr_mode_tag);
@@ -786,8 +790,22 @@ pub const CPU = struct {
                         self.wait_cycle = 2;
                     },
                     else => {
+                        const g2_instruction_str = [_][]const u8{
+                            "ASL", "ROL", "LSR", "ROR", "STX", "LDX", "DEC", "INC",
+                        };
                         self.logDbg(g2_instruction_str[op_code], addr_mode, am_res, g2_addr_mode_tag);
-                        self.wait_cycle = g2_instruction[op_code](self, addr_mode, am_res) + am_res.additionalCycle;
+                        self.wait_cycle = switch (op_code) {
+                            0 => self.ASL(addr_mode, am_res),
+                            1 => self.ROL(addr_mode, am_res),
+                            2 => self.LSR(addr_mode, am_res),
+                            3 => self.ROR(addr_mode, am_res),
+                            4 => self.STX(addr_mode, am_res),
+                            5 => self.LDX(addr_mode, am_res),
+                            6 => self.DEC(addr_mode, am_res),
+                            7 => self.INC(addr_mode, am_res),
+                            else => 0,
+                        };
+                        self.wait_cycle += am_res.additionalCycle;
                     },
                 }
             },
@@ -931,13 +949,18 @@ pub const CPU = struct {
                         self.wait_cycle = 2;
                     },
                     else => {
-                        const am_res = if (instruction == 0x6C) self.AM_Indirect() else g3_addr_mode[addr_mode](self);
-                        const g3_instruction = [8](*const fn (*CPU, u8, AMRes) u8){
-                            CPU.NOP, CPU.BIT, CPU.JMP, CPU.JMP, CPU.STY, CPU.LDY, CPU.CPY, CPU.CPX,
+                        const am_res = if (instruction == 0x6C) self.AM_Indirect() //
+                        else switch (@as(g3_addr_mode_tag, @enumFromInt(addr_mode))) {
+                            .Immediate => self.AM_Immediate(),
+                            .ZeroPage => self.AM_ZeroPage(),
+                            .Implied => self.AM_Implied(),
+                            .Absolute => self.AM_Absolute(),
+                            .Relative => self.AM_Relative(),
+                            .ZeroPageX => self.AM_ZeroPageX(),
+                            .Indirect => self.AM_Indirect(),
+                            .AbsoluteX => self.AM_AbsoluteX(),
                         };
-                        const g3_instruction_str = [_][]const u8{
-                            "NOP", "BIT", "JMP", "JMP", "STY", "LDX", "CPY", "CPX",
-                        };
+
                         if (addr_mode == 4) { // Branch it all
                             const branch_instruction_name = [_][]const u8{
                                 "BPL", "BMI", "BVC", "BVS", "BCC", "BCS", "BNE", "BEQ",
@@ -962,8 +985,22 @@ pub const CPU = struct {
                                 self.wait_cycle = 2;
                             }
                         } else {
+                            const g3_instruction_str = [_][]const u8{
+                                "NOP", "BIT", "JMP", "JMP", "STY", "LDY", "CPY", "CPX",
+                            };
                             self.logDbg(g3_instruction_str[op_code], if (instruction == 0x6C) 6 else addr_mode, am_res, g3_addr_mode_tag);
-                            self.wait_cycle = g3_instruction[op_code](self, addr_mode, am_res) + am_res.additionalCycle;
+                            self.wait_cycle = switch (op_code) {
+                                0 => self.NOP(addr_mode, am_res),
+                                1 => self.BIT(addr_mode, am_res),
+                                2 => self.JMP(addr_mode, am_res),
+                                3 => self.JMP(addr_mode, am_res),
+                                4 => self.STY(addr_mode, am_res),
+                                5 => self.LDY(addr_mode, am_res),
+                                6 => self.CPY(addr_mode, am_res),
+                                7 => self.CPX(addr_mode, am_res),
+                                else => 0,
+                            };
+                            self.wait_cycle += am_res.additionalCycle;
                         }
                     },
                 }

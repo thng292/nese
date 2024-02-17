@@ -46,15 +46,18 @@ pub fn init(mapper: Mapper, rom: *Rom) !PPU {
 inline fn fetchRenderData(self: *PPU) void {
     if (self.vreg.coarse_x != self.render_cache.coarse_x or self.render_cache.first_time) {
         const vreg: u16 = @bitCast(self.vreg);
-        const title_id: u32 = self.internalRead(0x2000 + (vreg & 0x0FFF));
-        const CHR_index = title_id * 16 + @as(u32, self.ctrl.BGPatternTableAddr) * 0x1000;
-        self.render_cache.lsb = self.CHR_ROM[CHR_index + self.vreg.fine_y];
-        self.render_cache.msb = self.CHR_ROM[CHR_index + 8 + self.vreg.fine_y];
+        const title_id: u16 = self.internalRead(0x2000 + (vreg & 0x0FFF));
+
+        const CHR_index = title_id * 16 + @as(u16, self.ctrl.BGPatternTableAddr) * 0x1000;
+        self.render_cache.lsb = self.CHR_ROM[self.mapper.ppuDecode(CHR_index + self.vreg.fine_y)];
+        self.render_cache.msb = self.CHR_ROM[self.mapper.ppuDecode(CHR_index + self.vreg.fine_y + 8)];
+
         var attrbute_index: u16 = self.vreg.coarse_x >> 2;
         const tmp: u6 = self.vreg.coarse_y >> 2;
         attrbute_index |= tmp << 3;
         attrbute_index |= @as(u16, self.vreg.nametable_y) << 11;
         attrbute_index |= @as(u16, self.vreg.nametable_x) << 10;
+
         var current_attrbute = self.internalRead(0x23C0 | attrbute_index);
         if (self.vreg.coarse_y & 0b10 != 0) {
             current_attrbute >>= 4;
@@ -63,6 +66,7 @@ inline fn fetchRenderData(self: *PPU) void {
             current_attrbute >>= 2;
         }
         current_attrbute &= 0b11;
+
         self.render_cache.attr = @truncate(current_attrbute);
         self.render_cache.first_time = false;
     }
@@ -72,6 +76,7 @@ inline fn IncX(self: *PPU) void {
     if (!self.mask.ShowBG and !self.mask.ShowSprite) {
         return;
     }
+
     if (self.fine_x == 7) {
         self.fine_x = 0;
         if (self.vreg.coarse_x == 31) {
@@ -89,6 +94,8 @@ inline fn IncY(self: *PPU) void {
     if (!self.mask.ShowBG and !self.mask.ShowSprite) {
         return;
     }
+
+    self.render_cache = RenderCache{};
 
     if (self.vreg.fine_y < 7) {
         self.vreg.fine_y += 1;
@@ -128,14 +135,15 @@ pub fn clock(self: *PPU, renderer: *sdl.Renderer) !void {
     if (self.scanline == 261) {
         if (self.cycle == 1) {
             self.status = std.mem.zeroes(PPUSTATUS);
+            // self.status.VBlank = false;
         }
-        // if (self.cycle >= 280 and self.cycle <= 304) {
-        if (self.mask.ShowBG or self.mask.ShowSprite) {
-            self.vreg.fine_y = self.treg.fine_y;
-            self.vreg.coarse_y = self.treg.coarse_y;
-            self.vreg.nametable_y = self.treg.nametable_y;
+        if (self.cycle >= 280 and self.cycle <= 304) {
+            if (self.mask.ShowBG or self.mask.ShowSprite) {
+                self.vreg.fine_y = self.treg.fine_y;
+                self.vreg.coarse_y = self.treg.coarse_y;
+                self.vreg.nametable_y = self.treg.nametable_y;
+            }
         }
-        // }
     }
 
     if (self.cycle == 256) {

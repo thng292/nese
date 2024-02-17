@@ -4,3 +4,4 @@ libs
 test-rom
 !nestest.nes
 out.txt
+src/ppu.cpp
