@@ -117,9 +117,9 @@ pub fn main() !void {
                 try ppu.clock(renderer);
                 // ppu.status.VBlank = true;
                 counter += 1;
-                if (counter == 1_000_000) {
-                    std.os.exit(0);
-                }
+                // if (counter == 1_000_000) {
+                //     std.os.exit(0);
+                // }
             }
         }
         if (step) {

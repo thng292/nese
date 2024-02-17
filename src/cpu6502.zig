@@ -591,16 +591,6 @@ pub const CPU = struct {
         return instruction_cycle[addr_mode];
     }
 
-    const g3_addr_mode = [8](*const fn (self: *CPU) AMRes){
-        CPU.AM_Immediate,
-        CPU.AM_ZeroPage,
-        CPU.AM_None,
-        CPU.AM_Absolute,
-        CPU.AM_Relative,
-        CPU.AM_ZeroPageX,
-        CPU.AM_None,
-        CPU.AM_AbsoluteX,
-    };
     const g3_addr_mode_tag = enum(u8) {
         Immediate,
         ZeroPage,
@@ -749,7 +739,7 @@ pub const CPU = struct {
                     .Absolute => self.AM_Absolute(),
                     .None => AMRes{},
                     .ZeroPageX => if (op_code == 4 or op_code == 5) self.AM_ZeroPageY() else self.AM_ZeroPageX(),
-                    .Nono2 => AMRes{},
+                    .None2 => AMRes{},
                     .AbsoluteX => if (op_code == 4 or op_code == 5) self.AM_AbsoluteY() else self.AM_AbsoluteX(),
                 };
 
