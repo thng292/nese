@@ -107,14 +107,14 @@ pub fn main() !void {
             // Scanline by scanline
             try renderer.setTarget(game_screen);
             for (0..dot_per_frame) |_| {
+                try ppu.clock(renderer);
                 if (counter % 3 == 0) {
-                    if (ppu.nmiSend) {
-                        bus.nmiSet = true;
-                        ppu.nmiSend = false;
-                    }
                     try cpu.step();
                 }
-                try ppu.clock(renderer);
+                if (ppu.nmiSend) {
+                    ppu.nmiSend = false;
+                    bus.nmiSet = true;
+                }
                 // ppu.status.VBlank = true;
                 counter += 1;
                 // if (counter == 1_000_000) {

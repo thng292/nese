@@ -1,6 +1,8 @@
 const std = @import("std");
 const Bus = @import("bus.zig").Bus;
 
+const log_full = true;
+
 pub const CPU = struct {
     bus: *Bus,
     a: u8 = 0,
@@ -15,7 +17,7 @@ pub const CPU = struct {
     const CPUStatus = packed struct(u8) {
         carry: u1 = 0,
         zero: u1 = 0,
-        interruptDisable: u1 = 0,
+        interruptDisable: u1 = 1,
         decimalMode: u1 = 0,
         breakCommand: u1 = 0,
         reserved: u1 = 1,
@@ -27,7 +29,7 @@ pub const CPU = struct {
         self.a = 0;
         self.x = 0;
         self.y = 0;
-        self.sp = 0xFF - 3;
+        self.sp = 0xFD;
         self.status = CPUStatus{};
         self.wait_cycle = 7;
         self.cycle_count = 7;
@@ -68,26 +70,32 @@ pub const CPU = struct {
     fn NMI(self: *CPU) u8 {
         var tmp = self.status;
         tmp.breakCommand = 0;
-        self.sp -= 3;
+        tmp.interruptDisable = 1;
+        tmp.reserved = 1;
+        self.bus.write(self.getStackAddr(0), @truncate(self.pc >> 8));
+        self.sp -%= 1;
+        self.bus.write(self.getStackAddr(0), @truncate(self.pc));
+        self.sp -%= 1;
         self.bus.write(self.getStackAddr(0), @bitCast(tmp));
-        self.bus.write(self.getStackAddr(1), @truncate(self.pc));
-        self.bus.write(self.getStackAddr(2), @truncate(self.pc >> 8));
-        self.status.interruptDisable = 1;
+        self.sp -%= 1;
         var nmi_handler_addr: u16 = self.bus.read(0xFFFA);
         nmi_handler_addr |= @as(u16, @intCast(self.bus.read(0xFFFB))) << 8;
         self.pc = nmi_handler_addr;
         self.logDbg("NMI", 0, AMRes{ .addr = nmi_handler_addr }, g1_addr_mode_tag);
-        return 7;
+        return 8;
     }
 
     fn IRQ(self: *CPU) u8 {
         var tmp = self.status;
         tmp.breakCommand = 0;
-        self.sp -= 3;
+        tmp.interruptDisable = 1;
+        tmp.reserved = 1;
+        self.bus.write(self.getStackAddr(0), @truncate(self.pc >> 8));
+        self.sp -%= 1;
+        self.bus.write(self.getStackAddr(0), @truncate(self.pc));
+        self.sp -%= 1;
         self.bus.write(self.getStackAddr(0), @bitCast(tmp));
-        self.bus.write(self.getStackAddr(1), @truncate(self.pc));
-        self.bus.write(self.getStackAddr(2), @truncate(self.pc >> 8));
-        self.status.interruptDisable = 1;
+        self.sp -%= 1;
         var irq_handler_addr: u16 = self.bus.read(0xFFFE);
         irq_handler_addr |= @as(u16, @intCast(self.bus.read(0xFFFF))) << 8;
         self.pc = irq_handler_addr;
@@ -284,8 +292,8 @@ pub const CPU = struct {
         if (comptime @import("builtin").mode != .Debug) {
             return;
         }
-        if (true) {
-            std.debug.print("{X:0>4} {s} {s:16} r:{X:0>2} a:{X:0>4},A:{X:0>2} X:{X:0>2} Y:{X:0>2} SP:{X:0>2} F:{X:0>2},2002:{X:0>2},PPU:{d:3},{d:3},CYC:{}\n", .{
+        if (comptime log_full) {
+            std.debug.print("{X:0>4} {s} {s:16} r:{X:0>2} a:{X:0>4},A:{X:0>2} X:{X:0>2} Y:{X:0>2} SP:{X:0>2} F:{X:0>2},2002:{X:0>2},PPU:{:3},{:3},CYC:{}\n", .{
                 self.pc,
                 instruction_name,
                 @tagName(@as(enum_tag, (@enumFromInt(addr_mode)))),
@@ -602,17 +610,21 @@ pub const CPU = struct {
         AbsoluteX,
     };
 
-    fn BIT(self: *CPU, addr_mode: u8, am_res: AMRes) u8 {
-        self.status.zero = if (self.a & am_res.res != 0) 1 else 0;
-        self.status.overflow = if (am_res.res & 0x40 != 0) 1 else 0;
-        self.status.negative = if (am_res.res & 0x80 != 0) 1 else 0;
+    fn BIT(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
+        var am_res = cam_res;
+        if (!am_res.res_fetched) {
+            am_res.res = self.bus.read(am_res.addr);
+        }
+        self.status.zero = if (self.a & am_res.res == 0) 1 else 0;
+        self.status.overflow = if (am_res.res & 0b0100_0000 != 0) 1 else 0;
+        self.status.negative = if (am_res.res & 0b1000_0000 != 0) 1 else 0;
         const instruction_cycle = [8]u8{ 0, 3, 0, 4, 0, 0, 0, 0 };
         return instruction_cycle[addr_mode];
     }
 
     fn JMP(self: *CPU, addr_mode: u8, am_res: AMRes) u8 {
         self.pc = am_res.addr;
-        const instruction_cycle = [8]u8{ 0, 3, 0, 4, 0, 0, 0, 0 };
+        const instruction_cycle = [8]u8{ 0, 0, 0, 3, 0, 0, 5, 0 };
         return instruction_cycle[addr_mode];
     }
 
@@ -703,15 +715,16 @@ pub const CPU = struct {
         switch (group) {
             // Group 1
             0b01 => {
-                const am_res = switch (@as(g1_addr_mode_tag, @enumFromInt(addr_mode))) {
-                    .IndexedIndirect => self.AM_IndexedIndirect(),
-                    .ZeroPage => self.AM_ZeroPage(),
-                    .Immediate => self.AM_Immediate(),
-                    .Absolute => self.AM_Absolute(),
-                    .IndirectIndexed => self.AM_IndirectIndexed(),
-                    .ZeroPageX => self.AM_ZeroPageX(),
-                    .AbsoluteY => self.AM_AbsoluteY(),
-                    .AbsoluteX => self.AM_AbsoluteX(),
+                const am_res = switch (addr_mode) {
+                    0 => self.AM_IndexedIndirect(),
+                    1 => self.AM_ZeroPage(),
+                    2 => self.AM_Immediate(),
+                    3 => self.AM_Absolute(),
+                    4 => self.AM_IndirectIndexed(),
+                    5 => self.AM_ZeroPageX(),
+                    6 => self.AM_AbsoluteY(),
+                    7 => self.AM_AbsoluteX(),
+                    else => self.AM_None(),
                 };
                 const g1_instruction_str = [_][]const u8{
                     "ORA", "AND", "EOR", "ADC", "STA", "LDA", "CMP", "SBC",
@@ -732,15 +745,14 @@ pub const CPU = struct {
             },
             // Group 2
             0b10 => {
-                const am_res = switch (@as(g2_addr_mode_tag, @enumFromInt(addr_mode))) {
-                    .Immediate => self.AM_Immediate(),
-                    .ZeroPage => self.AM_ZeroPage(),
-                    .Accumulator => self.AM_Accumulator(),
-                    .Absolute => self.AM_Absolute(),
-                    .None => AMRes{},
-                    .ZeroPageX => if (op_code == 4 or op_code == 5) self.AM_ZeroPageY() else self.AM_ZeroPageX(),
-                    .None2 => AMRes{},
-                    .AbsoluteX => if (op_code == 4 or op_code == 5) self.AM_AbsoluteY() else self.AM_AbsoluteX(),
+                const am_res = switch (addr_mode) {
+                    0 => self.AM_Immediate(),
+                    1 => self.AM_ZeroPage(),
+                    2 => self.AM_Accumulator(),
+                    3 => self.AM_Absolute(),
+                    5 => if (op_code == 4 or op_code == 5) self.AM_ZeroPageY() else self.AM_ZeroPageX(),
+                    7 => if (op_code == 4 or op_code == 5) self.AM_AbsoluteY() else self.AM_AbsoluteX(),
+                    else => self.AM_None(),
                 };
 
                 switch (instruction) {
@@ -835,7 +847,7 @@ pub const CPU = struct {
                         const pc_lo = self.bus.read(self.getStackAddr(1));
                         const pc_hi: u16 = self.bus.read(self.getStackAddr(2));
                         self.sp +%= 2;
-                        self.pc = pc_hi << 8 | pc_lo;
+                        self.pc = (pc_hi << 8) | pc_lo;
                         self.wait_cycle = 6;
                     },
                     0x60 => { // RTS
@@ -844,7 +856,7 @@ pub const CPU = struct {
                         const pc_lo = self.bus.read(self.getStackAddr(0));
                         const pc_hi: u16 = self.bus.read(self.getStackAddr(1));
                         self.sp +%= 1;
-                        self.pc = (pc_hi << 8 | pc_lo) + 1;
+                        self.pc = ((pc_hi << 8) | pc_lo) + 1;
                         self.wait_cycle = 6;
                     },
                     0x08 => { // PHP not the language
@@ -940,15 +952,14 @@ pub const CPU = struct {
                     },
                     else => {
                         const am_res = if (instruction == 0x6C) self.AM_Indirect() //
-                        else switch (@as(g3_addr_mode_tag, @enumFromInt(addr_mode))) {
-                            .Immediate => self.AM_Immediate(),
-                            .ZeroPage => self.AM_ZeroPage(),
-                            .Implied => self.AM_Implied(),
-                            .Absolute => self.AM_Absolute(),
-                            .Relative => self.AM_Relative(),
-                            .ZeroPageX => self.AM_ZeroPageX(),
-                            .Indirect => self.AM_Indirect(),
-                            .AbsoluteX => self.AM_AbsoluteX(),
+                        else switch (addr_mode) {
+                            0 => self.AM_Immediate(),
+                            1 => self.AM_ZeroPage(),
+                            3 => self.AM_Absolute(),
+                            4 => self.AM_Relative(),
+                            5 => self.AM_ZeroPageX(),
+                            7 => self.AM_AbsoluteX(),
+                            else => self.AM_None(),
                         };
 
                         if (addr_mode == 4) { // Branch it all
@@ -998,6 +1009,7 @@ pub const CPU = struct {
             else => {},
         }
         self.cycle_count += self.wait_cycle;
+        self.wait_cycle -= 1;
     }
 
     pub fn exec(self: *CPU, end_after_: u16) !void {
@@ -1050,15 +1062,14 @@ fn cpu_test_all() !void {
 
     var mapper0 = Mapper0.init(&test_rom);
     const mapper = toMapper(&mapper0);
-    var ppu = try PPU.init(std.heap.page_allocator, mapper, &test_rom);
-    defer ppu.deinit();
+    var ppu = try PPU.init(mapper, &test_rom);
     var bus = Bus.init(mapper, &ppu);
 
     var cpu = CPU{
         .bus = &bus,
-        .pc = mapper.startPC,
-        .sp = 0xFF - 3,
     };
+    cpu.reset();
+    cpu.pc = 0xC000;
     try cpu.exec(0xA000);
     std.log.warn("0x02 0x03 {x}{x}", .{ bus.read(0x02), bus.read(0x03) });
 }

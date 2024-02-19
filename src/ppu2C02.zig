@@ -22,54 +22,27 @@ data: u8 = 0,
 addr_latch: bool = false,
 data_buff: u8 = 0,
 
-scanline: u16 = 0,
-cycle: u16 = 0,
+scanline: i16 = 0,
+cycle: i16 = 0,
 vreg: VRamAddr = std.mem.zeroes(VRamAddr),
 treg: VRamAddr = std.mem.zeroes(VRamAddr),
 fine_x: u3 = 0,
 even_frame: bool = true,
 
-render_cache: RenderCache = RenderCache{},
+bg_shifter_pattern_lo: u16 = 0,
+bg_shifter_pattern_hi: u16 = 0,
+bg_shifter_attrib_lo: u16 = 0,
+bg_shifter_attrib_hi: u16 = 0,
+bg_next_title_id: u8 = 0,
+bg_next_title_lsb: u8 = 0,
+bg_next_title_msb: u8 = 0,
+bg_next_title_attrib: u8 = 0,
 
 pub fn init(mapper: Mapper, rom: *Rom) !PPU {
-    // const noTitles = rom.CHR_RomBanks.len / 16;
-    // const chr_rom = try a.alloc(Title, noTitles);
-    // for (0..noTitles) |i| {
-    //     chr_rom[i] = Title.init(rom.CHR_RomBanks[i * 16 .. (i + 1) * 16]);
-    // }
     return PPU{
         .mapper = mapper,
         .CHR_ROM = rom.CHR_RomBanks,
     };
-}
-
-inline fn fetchRenderData(self: *PPU) void {
-    if (self.vreg.coarse_x != self.render_cache.coarse_x or self.render_cache.first_time) {
-        const vreg: u16 = @bitCast(self.vreg);
-        const title_id: u16 = self.internalRead(0x2000 + (vreg & 0x0FFF));
-
-        const CHR_index = title_id * 16 + @as(u16, self.ctrl.BGPatternTableAddr) * 0x1000;
-        self.render_cache.lsb = self.CHR_ROM[self.mapper.ppuDecode(CHR_index + self.vreg.fine_y)];
-        self.render_cache.msb = self.CHR_ROM[self.mapper.ppuDecode(CHR_index + self.vreg.fine_y + 8)];
-
-        var attrbute_index: u16 = self.vreg.coarse_x >> 2;
-        const tmp: u6 = self.vreg.coarse_y >> 2;
-        attrbute_index |= tmp << 3;
-        attrbute_index |= @as(u16, self.vreg.nametable_y) << 11;
-        attrbute_index |= @as(u16, self.vreg.nametable_x) << 10;
-
-        var current_attrbute = self.internalRead(0x23C0 | attrbute_index);
-        if (self.vreg.coarse_y & 0b10 != 0) {
-            current_attrbute >>= 4;
-        }
-        if (self.vreg.coarse_x & 0b10 != 0) {
-            current_attrbute >>= 2;
-        }
-        current_attrbute &= 0b11;
-
-        self.render_cache.attr = @truncate(current_attrbute);
-        self.render_cache.first_time = false;
-    }
 }
 
 inline fn IncX(self: *PPU) void {
@@ -77,16 +50,11 @@ inline fn IncX(self: *PPU) void {
         return;
     }
 
-    if (self.fine_x == 7) {
-        self.fine_x = 0;
-        if (self.vreg.coarse_x == 31) {
-            self.vreg.coarse_x = 0;
-            self.vreg.nametable_x = ~self.vreg.nametable_x;
-        } else {
-            self.vreg.coarse_x += 1;
-        }
+    if (self.vreg.coarse_x == 31) {
+        self.vreg.coarse_x = 0;
+        self.vreg.nametable_x = ~self.vreg.nametable_x;
     } else {
-        self.fine_x += 1;
+        self.vreg.coarse_x += 1;
     }
 }
 
@@ -94,8 +62,6 @@ inline fn IncY(self: *PPU) void {
     if (!self.mask.ShowBG and !self.mask.ShowSprite) {
         return;
     }
-
-    self.render_cache = RenderCache{};
 
     if (self.vreg.fine_y < 7) {
         self.vreg.fine_y += 1;
@@ -110,34 +76,86 @@ inline fn IncY(self: *PPU) void {
     }
 }
 
+pub fn LoadBGShifter(self: *PPU) void {
+    self.bg_shifter_pattern_lo = (self.bg_shifter_pattern_lo & 0xFF00) | self.bg_next_title_lsb;
+    self.bg_shifter_pattern_hi = (self.bg_shifter_pattern_hi & 0xFF00) | self.bg_next_title_msb;
+    const tmp: u16 = if (self.bg_next_title_attrib & 0b01 != 0) 0xFF else 0x00;
+    self.bg_shifter_attrib_lo = (self.bg_shifter_attrib_lo & 0xFF00) | tmp;
+    const tmp2: u16 = if (self.bg_next_title_attrib & 0b10 != 0) 0xFF else 0x00;
+    self.bg_shifter_attrib_hi = (self.bg_shifter_attrib_hi & 0xFF00) | tmp2;
+}
+
+pub fn UpdateShifter(self: *PPU) void {
+    if (self.mask.ShowBG) {
+        self.bg_shifter_pattern_lo <<= 1;
+        self.bg_shifter_pattern_hi <<= 1;
+        self.bg_shifter_attrib_lo <<= 1;
+        self.bg_shifter_attrib_hi <<= 1;
+    }
+}
+
 pub fn clock(self: *PPU, renderer: *sdl.Renderer) !void {
-    const scanline_max_cycle = 341;
-    const max_scanline = 262;
-
-    if (self.scanline == 0 and self.cycle == 0) {
-        self.even_frame = !self.even_frame;
-        self.mirroring = self.mapper.getMirroringMode();
-    }
-
-    if (self.cycle == 0) {
-        self.cycle = 1;
-    }
-
-    if (self.scanline == 241 and self.cycle == 1) {
-        self.status.VBlank = true;
-        self.nmiSend = self.ctrl.NMIEnable;
-    }
-
-    // if (self.scanline == self.mapper.getNMIScanline()) {
-    //     self.nmiSend = self.ctrl.NMIEnable;
-    // }
-
-    if (self.scanline == 261) {
-        if (self.cycle == 1) {
-            self.status = std.mem.zeroes(PPUSTATUS);
-            // self.status.VBlank = false;
+    if (self.scanline >= -1 and self.scanline < 240) {
+        if (self.scanline == 0 and self.cycle == 0) {
+            self.cycle = 1;
+            self.mirroring = self.mapper.getMirroringMode();
         }
-        if (self.cycle >= 280 and self.cycle <= 304) {
+
+        if (self.scanline == -1 and self.cycle == 1) {
+            self.status = std.mem.zeroes(PPUSTATUS);
+        }
+
+        if ((self.cycle >= 2 and self.cycle < 258) //
+        or (self.cycle >= 321 and self.cycle < 338)) {
+            self.UpdateShifter();
+            switch (@mod(self.cycle - 1, 8)) {
+                0 => {
+                    self.LoadBGShifter();
+                    const vreg: u16 = @bitCast(self.vreg);
+                    self.bg_next_title_id = self.internalRead(0x2000 | (vreg & 0x0FFF));
+                },
+                2 => {
+                    self.bg_next_title_attrib = self.internalRead(0x23C0 //
+                    | @as(u16, self.vreg.nametable_y) << 11 //
+                    | @as(u16, self.vreg.nametable_x) << 10 //
+                    | @as(u6, self.vreg.coarse_y >> 2) << 3 //
+                    | self.vreg.coarse_x >> 2);
+                    if (self.vreg.coarse_y & 0x02 != 0) {
+                        self.bg_next_title_attrib >>= 4;
+                    }
+                    if (self.vreg.coarse_x & 0x02 != 0) {
+                        self.bg_next_title_attrib >>= 2;
+                    }
+                    self.bg_next_title_attrib &= 0b11;
+                },
+                4 => {
+                    const tmp = @as(u16, self.bg_next_title_id) * 16 + @as(u16, self.ctrl.BGPatternTableAddr) * 0x1000;
+                    self.bg_next_title_lsb = self.internalRead(tmp + self.vreg.fine_y);
+                },
+                6 => {
+                    const tmp = @as(u16, self.bg_next_title_id) * 16 + @as(u16, self.ctrl.BGPatternTableAddr) * 0x1000;
+                    self.bg_next_title_msb = self.internalRead(tmp + self.vreg.fine_y + 8);
+                },
+                7 => self.IncX(),
+                else => {},
+            }
+        }
+
+        if (self.cycle == 256) {
+            self.IncY();
+            self.LoadBGShifter();
+            if (self.mask.ShowBG or self.mask.ShowSprite) {
+                self.vreg.coarse_x = self.treg.coarse_x;
+                self.vreg.nametable_x = self.treg.nametable_x;
+            }
+        }
+
+        if (self.cycle == 338 or self.cycle == 340) {
+            const vreg: u16 = @bitCast(self.vreg);
+            self.bg_next_title_id = self.internalRead(0x2000 | (vreg & 0x0FFF));
+        }
+
+        if (self.scanline == -1 and self.cycle >= 280 and self.cycle < 305) {
             if (self.mask.ShowBG or self.mask.ShowSprite) {
                 self.vreg.fine_y = self.treg.fine_y;
                 self.vreg.coarse_y = self.treg.coarse_y;
@@ -146,30 +164,44 @@ pub fn clock(self: *PPU, renderer: *sdl.Renderer) !void {
         }
     }
 
-    if (self.cycle == 256) {
-        self.IncY();
-        if (self.mask.ShowBG or self.mask.ShowSprite) {
-            self.vreg.coarse_x = self.treg.coarse_x;
-            self.vreg.nametable_x = self.treg.nametable_x;
-        }
+    if (self.scanline == 240) {
+        // Placeholder for something
     }
 
-    if (self.scanline < 240 and self.cycle <= 256 and self.mask.ShowBG) {
-        // Draw dot @ self.vreg
-        self.fetchRenderData();
-        var pixel: u8 = self.render_cache.attr << 2;
-        pixel |= (self.render_cache.lsb >> (7 - self.fine_x)) & 0b1;
-        pixel |= ((self.render_cache.msb >> (7 - self.fine_x)) << 1) & 0b10;
+    // if (self.scanline >= 241 and self.scanline < 261) {
+    if (self.scanline == 241 and self.cycle == 1) {
+        self.status.VBlank = true;
+        self.nmiSend = self.ctrl.NMIEnable;
+    }
+    // }
+
+    // Draw
+    var pixel: u4 = 0;
+    if (self.mask.ShowBG) {
+        const bit_mux: u16 = @as(u16, 0x8000) >> self.fine_x;
+        if (self.bg_shifter_pattern_lo & bit_mux != 0) {
+            pixel |= 0b0001;
+        }
+        if (self.bg_shifter_pattern_hi & bit_mux != 0) {
+            pixel |= 0b0010;
+        }
+        if (self.bg_shifter_attrib_lo & bit_mux != 0) {
+            pixel |= 0b0100;
+        }
+        if (self.bg_shifter_attrib_hi & bit_mux != 0) {
+            pixel |= 0b1000;
+        }
         try renderer.setDrawColor(colors[self.imagePalette[pixel]]);
         try renderer.drawPoint(self.cycle - 1, self.scanline);
-        self.IncX();
     }
 
     self.cycle += 1;
-    if (self.cycle == scanline_max_cycle) {
+    if (self.cycle >= 341) {
         self.cycle = 0;
         self.scanline += 1;
-        self.scanline %= max_scanline;
+        if (self.scanline >= 261) {
+            self.scanline = -1;
+        }
     }
 }
 
@@ -229,22 +261,23 @@ pub fn write(self: *PPU, addr: u16, data: u8) void {
                 self.treg.coarse_y = @truncate(data >> 3);
                 self.treg.fine_y = @truncate(data & 0b111);
             } else {
-                if (data <= 239) {
-                    self.treg.coarse_x = @truncate(data >> 3);
-                    self.fine_x = @truncate(data & 0b111);
-                }
+                // if (data <= 239) {
+                self.treg.coarse_x = @truncate(data >> 3);
+                self.fine_x = @truncate(data & 0b111);
+                // }
             }
             self.addr_latch = !self.addr_latch;
         },
         0x2006 => {
-            const tmp: u16 = data;
+            var tmp: u16 = data;
             var treg: u16 = @bitCast(self.treg);
-            if (self.addr_latch) { // Lo byte
+            if (self.addr_latch) { // Hi byte
                 treg &= 0xFF00;
                 treg |= tmp;
                 self.vreg = @bitCast(treg);
-            } else { // Hi byte
-                treg &= 0x003F;
+            } else { // Lo byte
+                tmp &= 0x3F;
+                treg &= 0x00FF;
                 treg |= tmp << 8;
             }
             self.treg = @bitCast(treg);
@@ -288,6 +321,7 @@ fn find(arr: []const u8, pred: anytype) bool {
 }
 
 fn internalRead(self: *PPU, addr: u16) u8 {
+    // std.debug.print("{}\n", .{addr});
     return switch (addr) {
         0x0000...0x1FFF => self.CHR_ROM[self.mapper.ppuDecode(addr)],
         0x2000...0x2FFF => self.nametable[self.resolveNametableAddr(addr)],
