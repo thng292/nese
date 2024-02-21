@@ -7,18 +7,18 @@ const APU = @import("apu2A03.zig");
 
 pub const Bus = struct {
     mapper: Mapper,
-    ram: Ram,
+    ram: *Ram,
     ppu: *PPU,
-    io: IO,
-    apu: APU,
+    io: *IO,
+    apu: *APU,
     nmiSet: bool = false,
     irqSet: bool = false,
 
-    pub fn init(mapper: Mapper, ppu: *PPU) Bus {
+    pub fn init(mapper: Mapper, ppu: *PPU, ram: *Ram, io: *IO, apu: *APU) Bus {
         return Bus{
-            .ram = std.mem.zeroes(Ram),
-            .io = std.mem.zeroes(IO),
-            .apu = std.mem.zeroes(APU),
+            .ram = ram,
+            .io = io,
+            .apu = apu,
             .ppu = ppu,
             .mapper = mapper,
         };
@@ -28,7 +28,7 @@ pub const Bus = struct {
         return switch (addr) {
             0x0000...0x1FFF => self.ram.read(addr),
             0x2000...0x3FFF => self.ppu.read(addr),
-            0x4016...0x4017 => self.io.read(addr),
+            0x4016, 0x4017 => self.io.read(addr),
             0x4020...0xFFFF => self.mapper.cpuRead(addr),
             else => 0,
         };
