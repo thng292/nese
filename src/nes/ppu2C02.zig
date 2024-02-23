@@ -2,7 +2,6 @@ const std = @import("std");
 const sdl = @import("zsdl");
 const Mapper = @import("mapper.zig");
 const Rom = @import("ines.zig").ROM;
-const Bus = @import("bus.zig").Bus;
 
 const PPU = @This();
 mapper: Mapper,
@@ -78,7 +77,7 @@ inline fn IncY(self: *PPU) void {
     }
 }
 
-pub fn LoadBGShifter(self: *PPU) void {
+inline fn LoadBGShifter(self: *PPU) void {
     self.bg_shifter_pattern_lo = (self.bg_shifter_pattern_lo & 0xFF00) | self.bg_next_title_lsb;
     self.bg_shifter_pattern_hi = (self.bg_shifter_pattern_hi & 0xFF00) | self.bg_next_title_msb;
     const tmp: u16 = if (self.bg_next_title_attrib & 0b01 != 0) 0xFF else 0x00;
@@ -87,7 +86,7 @@ pub fn LoadBGShifter(self: *PPU) void {
     self.bg_shifter_attrib_hi = (self.bg_shifter_attrib_hi & 0xFF00) | tmp2;
 }
 
-pub fn UpdateShifter(self: *PPU) void {
+inline fn UpdateShifter(self: *PPU) void {
     if (self.mask.ShowBG) {
         self.bg_shifter_pattern_lo <<= 1;
         self.bg_shifter_pattern_hi <<= 1;
@@ -110,36 +109,60 @@ pub fn clock(self: *PPU, renderer: *sdl.Renderer) !void {
         if ((self.cycle >= 2 and self.cycle < 258) //
         or (self.cycle >= 321 and self.cycle < 338)) {
             self.UpdateShifter();
-            switch (@mod(self.cycle - 1, 8)) {
-                0 => {
-                    self.LoadBGShifter();
-                    const vreg: u16 = @bitCast(self.vreg);
-                    self.bg_next_title_id = self.internalRead(0x2000 | (vreg & 0x0FFF));
-                },
-                2 => {
-                    self.bg_next_title_attrib = self.internalRead(0x23C0 //
-                    | @as(u16, self.vreg.nametable_y) << 11 //
-                    | @as(u16, self.vreg.nametable_x) << 10 //
-                    | @as(u6, self.vreg.coarse_y >> 2) << 3 //
-                    | self.vreg.coarse_x >> 2);
-                    if (self.vreg.coarse_y & 0x02 != 0) {
-                        self.bg_next_title_attrib >>= 4;
-                    }
-                    if (self.vreg.coarse_x & 0x02 != 0) {
-                        self.bg_next_title_attrib >>= 2;
-                    }
-                    self.bg_next_title_attrib &= 0b11;
-                },
-                4 => {
-                    const tmp = @as(u16, self.bg_next_title_id) * 16 + @as(u16, self.ctrl.BGPatternTableAddr) * 0x1000;
-                    self.bg_next_title_lsb = self.internalRead(tmp + self.vreg.fine_y);
-                },
-                6 => {
-                    const tmp = @as(u16, self.bg_next_title_id) * 16 + @as(u16, self.ctrl.BGPatternTableAddr) * 0x1000;
-                    self.bg_next_title_msb = self.internalRead(tmp + self.vreg.fine_y + 8);
-                },
-                7 => self.IncX(),
-                else => {},
+            // switch (@mod(self.cycle - 1, 8)) {
+            //     0 => {
+            //         self.LoadBGShifter();
+            //         const vreg: u16 = @bitCast(self.vreg);
+            //         self.bg_next_title_id = self.internalRead(0x2000 | (vreg & 0x0FFF));
+            //     },
+            //     2 => {
+            //         self.bg_next_title_attrib = self.internalRead(0x23C0 //
+            //         | @as(u16, self.vreg.nametable_y) << 11 //
+            //         | @as(u16, self.vreg.nametable_x) << 10 //
+            //         | @as(u6, self.vreg.coarse_y >> 2) << 3 //
+            //         | self.vreg.coarse_x >> 2);
+            //         if (self.vreg.coarse_y & 0x02 != 0) {
+            //             self.bg_next_title_attrib >>= 4;
+            //         }
+            //         if (self.vreg.coarse_x & 0x02 != 0) {
+            //             self.bg_next_title_attrib >>= 2;
+            //         }
+            //         self.bg_next_title_attrib &= 0b11;
+            //     },
+            //     4 => {
+            //         const tmp = @as(u16, self.bg_next_title_id) * 16 + @as(u16, self.ctrl.BGPatternTableAddr) * 0x1000;
+            //         self.bg_next_title_lsb = self.internalRead(tmp + self.vreg.fine_y);
+            //     },
+            //     6 => {
+            //         const tmp = @as(u16, self.bg_next_title_id) * 16 + @as(u16, self.ctrl.BGPatternTableAddr) * 0x1000;
+            //         self.bg_next_title_msb = self.internalRead(tmp + self.vreg.fine_y + 8);
+            //     },
+            //     7 => self.IncX(),
+            //     else => {},
+            // }
+            if (@mod(self.cycle - 1, 8) == 7) {
+                self.LoadBGShifter();
+                const vreg: u16 = @bitCast(self.vreg);
+                self.bg_next_title_id = self.internalRead(0x2000 | (vreg & 0x0FFF));
+
+                self.bg_next_title_attrib = self.internalRead(0x23C0 //
+                | @as(u16, self.vreg.nametable_y) << 11 //
+                | @as(u16, self.vreg.nametable_x) << 10 //
+                | @as(u6, self.vreg.coarse_y >> 2) << 3 //
+                | self.vreg.coarse_x >> 2);
+                if (self.vreg.coarse_y & 0x02 != 0) {
+                    self.bg_next_title_attrib >>= 4;
+                }
+                if (self.vreg.coarse_x & 0x02 != 0) {
+                    self.bg_next_title_attrib >>= 2;
+                }
+                self.bg_next_title_attrib &= 0b11;
+
+                const tmp = @as(u16, self.bg_next_title_id) * 16 + @as(u16, self.ctrl.BGPatternTableAddr) * 0x1000;
+                self.bg_next_title_lsb = self.internalRead(tmp + self.vreg.fine_y);
+                self.bg_next_title_msb = self.internalRead(tmp + self.vreg.fine_y + 8);
+
+                self.IncX();
             }
         }
 
@@ -179,7 +202,7 @@ pub fn clock(self: *PPU, renderer: *sdl.Renderer) !void {
 
     // Draw
     var pixel: u4 = 0;
-    if (self.mask.ShowBG) {
+    if (self.mask.ShowBG and self.scanline < 240 and self.cycle < 256) {
         const bit_mux: u16 = @as(u16, 0x8000) >> self.fine_x;
         if (self.bg_shifter_pattern_lo & bit_mux != 0) {
             pixel |= 0b0001;

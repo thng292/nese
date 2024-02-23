@@ -6,6 +6,15 @@ pub const MirroringMode = enum(u1) {
     Vertical,
 };
 
+pub const MapperTag = enum(u8) {
+    Mapper0,
+    Mapper1,
+    Mapper2,
+    Mapper3,
+    Mapper4,
+    _,
+};
+
 const Mapper = @This();
 context: *void,
 cpu_read_fn: *const fn (context: *void, addr: u16) u8,
@@ -13,7 +22,6 @@ cpu_write_fn: *const fn (context: *void, addr: u16, data: u8) void,
 ppu_decode_fn: *const fn (context: *void, addr: u16) u16,
 get_mirroring_mode_fn: *const fn (context: *void) MirroringMode,
 get_nmi_scanline_fn: *const fn (context: *void) u16,
-startPC: u16,
 
 pub inline fn cpuRead(self: *Mapper, addr: u16) u8 {
     return self.cpu_read_fn(self.context, addr);
@@ -75,14 +83,12 @@ pub fn toMapper(ptr: anytype) Mapper {
         .ppu_decode_fn = anon.ppuDecode,
         .get_mirroring_mode_fn = anon.getMirroringMode,
         .get_nmi_scanline_fn = anon.getNMIScanline,
-        .startPC = ptr.startPC,
     };
 }
 
 test "To Mapper Interface" {
     const anon = struct {
         const Self = @This();
-        startPC: u16 = 0,
         pub fn cpuRead(context: *Self, address: u16) u8 {
             _ = address;
             _ = context;

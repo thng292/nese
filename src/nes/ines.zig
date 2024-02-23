@@ -15,15 +15,15 @@ pub const Header = packed struct(u128) {
     PRG_ROM_Size: u8,
     CHR_ROM_Size: u8,
     // Flag 6
-    mapperNumLo: u4,
-    fourScreenVram: bool,
-    hasTrainer: bool,
-    hasPersistentMem: bool,
     mirroring: bool,
+    hasPersistentMem: bool,
+    hasTrainer: bool,
+    fourScreenVram: bool,
+    mapperNumLo: u4,
     // Flag 7
-    mapperNumHi: u4,
-    version: u2,
     consoleFam: NESConsoleFamily,
+    version: u2,
+    mapperNumHi: u4,
 
     // Flag 8
     PRG_RAM_Size: u8,

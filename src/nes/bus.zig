@@ -7,23 +7,13 @@ const APU = @import("apu2A03.zig");
 
 pub const Bus = struct {
     mapper: Mapper,
-    ram: *Ram,
-    ppu: *PPU,
-    control: *Control,
-    apu: *APU,
+    ram: Ram,
+    ppu: PPU,
+    control: Control,
+    apu: APU,
     nmiSet: bool = false,
     irqSet: bool = false,
     dmaReq: bool = false,
-
-    pub fn init(mapper: Mapper, ppu: *PPU, ram: *Ram, control: *Control, apu: *APU) Bus {
-        return Bus{
-            .ram = ram,
-            .control = control,
-            .apu = apu,
-            .ppu = ppu,
-            .mapper = mapper,
-        };
-    }
 
     pub fn read(self: *Bus, addr: u16) u8 {
         return switch (addr) {

@@ -5,3 +5,4 @@ test-rom
 !nestest.nes
 out.txt
 src/ppu.cpp
+out*.txt

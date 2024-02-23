@@ -1,5 +1,7 @@
 const std = @import("std");
 const sdl = @import("zsdl");
+const Nes = @import("nes/nes.zig");
+const CPU = @import("nes/cpu6502.zig");
 
 const base_screen_w = 256;
 const base_screen_h = 240;
@@ -39,26 +41,13 @@ pub fn main() !void {
     const testRomFile = try std.fs.cwd().openFile("test-rom/nestest.nes", .{});
     // const testRomFile = try std.fs.cwd().openFile("test-rom/donkey kong.nes", .{});
     defer testRomFile.close();
-    var test_rom = try iNes.readFromFile(testRomFile, std.heap.page_allocator);
-    defer test_rom.deinit();
-
-    var mapper0 = Mapper0.init(&test_rom);
-    const mapper = toMapper(&mapper0);
-    var ppu = try PPU.init(mapper, &test_rom);
-    var ram = Ram{};
-    var io = Control{};
-    var apu = APU{};
-    var bus = Bus.init(mapper, &ppu, &ram, &io, &apu);
-    var cpu = CPU{
-        .bus = &bus,
-    };
-    cpu.reset();
+    var nes = try Nes.init(std.heap.page_allocator, testRomFile);
+    nes.startup();
+    defer nes.deinit();
 
     var event: sdl.Event = undefined;
     var run = true;
     var step = false;
-    var counter: u128 = 0;
-    const dot_per_frame = 341 * 262;
 
     var start = std.time.milliTimestamp();
     while (true) {
@@ -67,14 +56,13 @@ pub fn main() !void {
                 .quit => std.os.exit(0),
                 .keydown => {
                     switch (event.key.keysym.scancode) {
-                        .h => try ppu.printNametable1(),
                         .p => run = !run,
-                        // .s => {
-                        //     step = true;
-                        //     run = true;
-                        // },
+                        .i => {
+                            step = true;
+                            run = true;
+                        },
                         else => {
-                            io.handleKeyDownEvent(event);
+                            nes.handleKey(event);
                         },
                     }
                 },
@@ -94,21 +82,7 @@ pub fn main() !void {
             // Run the whole frame at once
             // Scanline by scanline
             try main_wind.renderer.setTarget(game_screen);
-            for (0..dot_per_frame) |_| {
-                try ppu.clock(main_wind.renderer);
-                if (counter % 3 == 0) {
-                    try cpu.step();
-                }
-                if (ppu.nmiSend) {
-                    ppu.nmiSend = false;
-                    bus.nmiSet = true;
-                }
-                // ppu.status.VBlank = true;
-                counter += 1;
-                // if (counter == 1_000_000) {
-                //     std.os.exit(0);
-                // }
-            }
+            try nes.runFrame(main_wind.renderer);
         }
         if (step) {
             step = false;
@@ -158,13 +132,3 @@ const Window = struct {
         self.renderer.destroy();
     }
 };
-
-const Bus = @import("bus.zig").Bus;
-const CPU = @import("cpu6502.zig");
-const iNes = @import("ines.zig").ROM;
-const Ram = @import("ram.zig");
-const Control = @import("control.zig");
-const Mapper0 = @import("mapper0.zig");
-const PPU = @import("ppu2C02.zig");
-const APU = @import("apu2A03.zig");
-const toMapper = @import("mapper.zig").toMapper;

@@ -40,26 +40,10 @@ pub fn reset(self: *CPU) void {
     self.pc |= tmp;
 }
 
-fn getStackAddr(self: *CPU, offset: i8) u16 {
+inline fn getStackAddr(self: *CPU, offset: i8) u16 {
     const res: i16 = @intCast(self.sp);
     return @intCast(res + 256 + offset);
 }
-
-const AddressingMode = enum(u8) {
-    Implied,
-    Accumulator,
-    Immediate,
-    ZeroPage,
-    ZeroPageX,
-    ZeroPageY,
-    Relative,
-    Absolute,
-    AbsoluteX,
-    AbsoluteY,
-    Indirect,
-    IndexedIndirect,
-    IndirectIndexed,
-};
 
 const AMRes = struct {
     res: u8 = 0,
@@ -68,7 +52,7 @@ const AMRes = struct {
     res_fetched: bool = false,
 };
 
-fn NMI(self: *CPU) u8 {
+inline fn NMI(self: *CPU) u8 {
     var tmp = self.status;
     tmp.breakCommand = 0;
     tmp.interruptDisable = 1;
@@ -86,7 +70,7 @@ fn NMI(self: *CPU) u8 {
     return 8;
 }
 
-fn IRQ(self: *CPU) u8 {
+inline fn IRQ(self: *CPU) u8 {
     var tmp = self.status;
     tmp.breakCommand = 0;
     tmp.interruptDisable = 1;
@@ -255,29 +239,6 @@ fn AM_None(self: *CPU) AMRes {
     return std.mem.zeroes(AMRes);
 }
 
-const AddressingModes = [_](fn (self: *CPU) AMRes){
-    CPU.AM_Implied,
-    CPU.AM_Accumulator,
-    CPU.AM_Immediate,
-    CPU.AM_ZeroPage,
-    CPU.AM_ZeroPageX,
-    CPU.AM_ZeroPageY,
-    CPU.AM_Relative,
-    CPU.AM_Absolute,
-    CPU.AM_AbsoluteX,
-    CPU.AM_AbsoluteY,
-    CPU.AM_Indirect,
-    CPU.AM_IndexedIndirect,
-    CPU.AM_IndirectIndexed,
-};
-
-pub fn init(bus: Bus) CPU {
-    return CPU{
-        .bus = bus,
-        .status = std.mem.zeroes(CPUStatus),
-    };
-}
-
 const g1_addr_mode_tag = enum(u8) {
     IndexedIndirect,
     ZeroPage,
@@ -316,7 +277,7 @@ fn logDbg(self: *CPU, instruction_name: []const u8, addr_mode: u8, am_res: AMRes
     }
 }
 
-fn ORA(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
+inline fn ORA(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
     var am_res = cam_res;
     if (!am_res.res_fetched) {
         am_res.res = self.bus.read(am_res.addr);
@@ -340,7 +301,7 @@ fn AND(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
     return instruction_cycle[addr_mode];
 }
 
-fn EOR(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
+inline fn EOR(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
     var am_res = cam_res;
     if (!am_res.res_fetched) {
         am_res.res = self.bus.read(am_res.addr);
@@ -391,7 +352,7 @@ fn ADC(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
     return instruction_cycle[addr_mode];
 }
 
-fn STA(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
+inline fn STA(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
     self.bus.write(cam_res.addr, self.a);
     const instruction_cycle = [8]u8{ 6, 3, 0, 4, 6, 4, 5, 5 };
     return instruction_cycle[addr_mode] - cam_res.additionalCycle;
@@ -409,7 +370,7 @@ fn LDA(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
     return instruction_cycle[addr_mode];
 }
 
-fn CMP(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
+inline fn CMP(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
     var am_res = cam_res;
     if (!am_res.res_fetched) {
         am_res.res = self.bus.read(am_res.addr);
@@ -473,7 +434,7 @@ const g2_addr_mode_tag = enum(u8) {
     AbsoluteX,
 };
 
-fn ASL(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
+inline fn ASL(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
     var am_res = cam_res;
     if (!am_res.res_fetched) {
         am_res.res = self.bus.read(am_res.addr);
@@ -491,7 +452,7 @@ fn ASL(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
     return instruction_cycle[addr_mode];
 }
 
-fn ROL(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
+inline fn ROL(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
     var am_res = cam_res;
     if (!am_res.res_fetched) {
         am_res.res = self.bus.read(am_res.addr);
@@ -509,7 +470,7 @@ fn ROL(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
     return instruction_cycle[addr_mode];
 }
 
-fn LSR(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
+inline fn LSR(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
     var am_res = cam_res;
     if (!am_res.res_fetched) {
         am_res.res = self.bus.read(am_res.addr);
@@ -527,7 +488,7 @@ fn LSR(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
     return instruction_cycle[addr_mode];
 }
 
-fn ROR(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
+inline fn ROR(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
     var am_res = cam_res;
     if (!am_res.res_fetched) {
         am_res.res = self.bus.read(am_res.addr);
@@ -547,13 +508,13 @@ fn ROR(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
     return instruction_cycle[addr_mode];
 }
 
-fn STX(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
+inline fn STX(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
     self.bus.write(cam_res.addr, self.x);
     const instruction_cycle = [8]u8{ 0, 3, 0, 4, 0, 4, 0, 0 };
     return instruction_cycle[addr_mode];
 }
 
-fn LDX(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
+inline fn LDX(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
     var am_res = cam_res;
     if (!am_res.res_fetched) {
         am_res.res = self.bus.read(am_res.addr);
@@ -565,7 +526,7 @@ fn LDX(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
     return instruction_cycle[addr_mode];
 }
 
-fn DEC(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
+inline fn DEC(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
     var am_res = cam_res;
     if (!am_res.res_fetched) {
         am_res.res = self.bus.read(am_res.addr);
@@ -578,7 +539,7 @@ fn DEC(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
     return instruction_cycle[addr_mode];
 }
 
-fn INC(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
+inline fn INC(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
     var am_res = cam_res;
     if (!am_res.res_fetched) {
         am_res.res = self.bus.read(am_res.addr);
@@ -602,7 +563,7 @@ const g3_addr_mode_tag = enum(u8) {
     AbsoluteX,
 };
 
-fn BIT(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
+inline fn BIT(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
     var am_res = cam_res;
     if (!am_res.res_fetched) {
         am_res.res = self.bus.read(am_res.addr);
@@ -614,19 +575,19 @@ fn BIT(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
     return instruction_cycle[addr_mode];
 }
 
-fn JMP(self: *CPU, addr_mode: u8, am_res: AMRes) u8 {
+inline fn JMP(self: *CPU, addr_mode: u8, am_res: AMRes) u8 {
     self.pc = am_res.addr;
     const instruction_cycle = [8]u8{ 0, 0, 0, 3, 0, 0, 5, 0 };
     return instruction_cycle[addr_mode];
 }
 
-fn STY(self: *CPU, addr_mode: u8, am_res: AMRes) u8 {
+inline fn STY(self: *CPU, addr_mode: u8, am_res: AMRes) u8 {
     self.bus.write(am_res.addr, self.y);
     const instruction_cycle = [8]u8{ 0, 3, 0, 4, 0, 4, 0, 0 };
     return instruction_cycle[addr_mode];
 }
 
-fn LDY(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
+inline fn LDY(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
     var am_res = cam_res;
     if (!am_res.res_fetched) {
         am_res.res = self.bus.read(am_res.addr);
@@ -638,7 +599,7 @@ fn LDY(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
     return instruction_cycle[addr_mode];
 }
 
-fn CPY(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
+inline fn CPY(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
     var am_res = cam_res;
     if (!am_res.res_fetched) {
         am_res.res = self.bus.read(am_res.addr);
@@ -651,7 +612,7 @@ fn CPY(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
     return instruction_cycle[addr_mode];
 }
 
-fn CPX(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
+inline fn CPX(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
     var am_res = cam_res;
     if (!am_res.res_fetched) {
         am_res.res = self.bus.read(am_res.addr);
@@ -664,20 +625,20 @@ fn CPX(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
     return instruction_cycle[addr_mode];
 }
 
-fn NOP(self: *CPU, addr_mode: u8, am_res: AMRes) u8 {
+inline fn NOP(self: *CPU, addr_mode: u8, am_res: AMRes) u8 {
     _ = am_res;
     _ = addr_mode;
     _ = self;
     return 2;
 }
 
-fn DEStuff(self: *CPU, stuff: *u8) void {
+inline fn DEStuff(self: *CPU, stuff: *u8) void {
     stuff.* -%= 1;
     self.status.zero = if (stuff.* == 0) 1 else 0;
     self.status.negative = if (stuff.* >> 7 != 0) 1 else 0;
 }
 
-fn INStuff(self: *CPU, stuff: *u8) void {
+inline fn INStuff(self: *CPU, stuff: *u8) void {
     stuff.* +%= 1;
     self.status.zero = if (stuff.* == 0) 1 else 0;
     self.status.negative = if (stuff.* >> 7 != 0) 1 else 0;
@@ -685,7 +646,7 @@ fn INStuff(self: *CPU, stuff: *u8) void {
 
 pub fn step(self: *CPU) !void {
     if (self.wait_cycle != 0) {
-        self.wait_cycle -= 1;
+        self.wait_cycle -%= 1;
         return;
     }
 

@@ -43,8 +43,3 @@ pub fn getNMIScanline(self: *Self) u16 {
     _ = self;
     return 400;
 }
-
-test "Mapper 0 Mapper Interface" {
-    var tmp = std.mem.zeroes(Self);
-    _ = mapperInterface.toMapper(&tmp);
-}
