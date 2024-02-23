@@ -12,7 +12,7 @@ y: u8 = 0,
 pc: u16 = 0,
 sp: u8 = 0xFF - 3,
 status: CPUStatus = CPUStatus{},
-wait_cycle: u8 = 7,
+wait_cycle: u16 = 7,
 cycle_count: u64 = 7,
 
 const CPUStatus = packed struct(u8) {
@@ -688,17 +688,26 @@ pub fn step(self: *CPU) !void {
         self.wait_cycle -= 1;
         return;
     }
+
     if (self.bus.nmiSet) {
         self.bus.nmiSet = false;
         self.wait_cycle += self.NMI();
         return;
     }
+
     if (self.bus.irqSet and self.status.interruptDisable == 0) {
         self.bus.irqSet = false;
         self.wait_cycle += self.IRQ();
         return;
     }
-    // std.debug.print("Next: {x} {x} {x} {x}\n", .{ self.bus.read(self.pc + 1), self.bus.read(self.pc + 2), self.bus.read(self.pc + 3), self.bus.read(self.pc + 4) });
+
+    if (self.bus.dmaReq) {
+        self.bus.dmaReq = false;
+        const cycle: u16 = 512 + @as(u16, @truncate(self.cycle_count % 2));
+        self.wait_cycle += cycle;
+        self.cycle_count += cycle;
+    }
+
     const instruction = self.bus.read(self.pc);
     self.pc +%= 1;
     const group = instruction & 3;

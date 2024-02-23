@@ -15,12 +15,14 @@ nmiSend: bool = false,
 
 CHR_ROM: []u8,
 nametable: [2048]u8 = undefined,
+oam: [256]u8 = undefined,
 spritePalette: [16]u8 = undefined,
 imagePalette: [16]u8 = undefined,
 
 data: u8 = 0,
 addr_latch: bool = false,
 data_buff: u8 = 0,
+oam_addr: u8 = 0,
 
 scanline: i16 = 0,
 cycle: i16 = 0,
@@ -227,7 +229,7 @@ pub fn read(self: *PPU, addr: u16) u8 {
             self.addr_latch = false;
             break :blk @bitCast(res);
         },
-        0x2004 => self.data, // OAM SHIT HERE
+        0x2004 => self.oam[self.oam_addr], // OAM SHIT HERE
         0x2007 => blk: {
             var res = self.data_buff;
             var tmp: u16 = @bitCast(self.vreg);
@@ -254,8 +256,11 @@ pub fn write(self: *PPU, addr: u16, data: u8) void {
             self.treg.nametable_y = self.ctrl.nametable_y;
         },
         0x2001 => self.mask = @bitCast(data),
-        0x2003 => {}, // OAM SHIT
-        0x2004 => {}, // OAM SHIT HERE
+        0x2003 => self.oam_addr = data, // OAM SHIT
+        0x2004 => {
+            self.oam[self.oam_addr] = data;
+            self.oam_addr +%= 1;
+        }, // OAM SHIT HERE
         0x2005 => {
             if (self.addr_latch) {
                 self.treg.coarse_y = @truncate(data >> 3);

@@ -46,7 +46,7 @@ pub fn main() !void {
     const mapper = toMapper(&mapper0);
     var ppu = try PPU.init(mapper, &test_rom);
     var ram = Ram{};
-    var io = IO{};
+    var io = Control{};
     var apu = APU{};
     var bus = Bus.init(mapper, &ppu, &ram, &io, &apu);
     var cpu = CPU{
@@ -163,7 +163,7 @@ const Bus = @import("bus.zig").Bus;
 const CPU = @import("cpu6502.zig");
 const iNes = @import("ines.zig").ROM;
 const Ram = @import("ram.zig");
-const IO = @import("io.zig");
+const Control = @import("control.zig");
 const Mapper0 = @import("mapper0.zig");
 const PPU = @import("ppu2C02.zig");
 const APU = @import("apu2A03.zig");
