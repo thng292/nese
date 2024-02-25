@@ -32,7 +32,7 @@ pub fn main() !void {
     };
     const game_screen = try main_wind.renderer.createTexture(
         .rgba8888,
-        .target,
+        .streaming,
         base_screen_w,
         base_screen_h,
     );
@@ -41,9 +41,9 @@ pub fn main() !void {
     const testRomFile = try std.fs.cwd().openFile("test-rom/nestest.nes", .{});
     // const testRomFile = try std.fs.cwd().openFile("test-rom/donkey kong.nes", .{});
     defer testRomFile.close();
-    var nes = try Nes.init(std.heap.page_allocator, testRomFile);
-    nes.startup();
+    var nes = try Nes.init(std.heap.page_allocator, testRomFile, game_screen);
     defer nes.deinit();
+    try nes.startup();
 
     var event: sdl.Event = undefined;
     var run = true;
@@ -70,19 +70,10 @@ pub fn main() !void {
             }
         }
 
-        try main_wind.renderer.setDrawColor(.{
-            .r = 255,
-            .g = 255,
-            .b = 255,
-            .a = 255,
-        });
-        try main_wind.renderer.clear();
-
         if (run) {
             // Run the whole frame at once
             // Scanline by scanline
-            try main_wind.renderer.setTarget(game_screen);
-            try nes.runFrame(main_wind.renderer);
+            try nes.runFrame();
         }
         if (step) {
             step = false;
@@ -96,7 +87,7 @@ pub fn main() !void {
         const now = std.time.milliTimestamp();
         const elapsed = now - start;
         start = now;
-        const tmp = 16 - elapsed;
+        const tmp = 17 - elapsed;
         if (tmp > 0) {
             const tt: u64 = @bitCast(tmp);
             sdl.delay(@truncate(tt));

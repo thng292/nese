@@ -28,7 +28,8 @@ cycle: i16 = 0,
 vreg: VRamAddr = std.mem.zeroes(VRamAddr),
 treg: VRamAddr = std.mem.zeroes(VRamAddr),
 fine_x: u3 = 0,
-even_frame: bool = true,
+texture_pixel_count: u32 = 0,
+should_draw: bool = false,
 
 bg_shifter_pattern_lo: u16 = 0,
 bg_shifter_pattern_hi: u16 = 0,
@@ -95,11 +96,13 @@ inline fn UpdateShifter(self: *PPU) void {
     }
 }
 
-pub fn clock(self: *PPU, renderer: *sdl.Renderer) !void {
+pub fn clock(self: *PPU, texture_data: [*]u8) !void {
     if (self.scanline >= -1 and self.scanline < 240) {
         if (self.scanline == 0 and self.cycle == 0) {
             self.cycle = 1;
             self.mirroring = self.mapper.getMirroringMode();
+            self.texture_pixel_count = 0;
+            self.should_draw = true;
         }
 
         if (self.scanline == -1 and self.cycle == 1) {
@@ -109,37 +112,6 @@ pub fn clock(self: *PPU, renderer: *sdl.Renderer) !void {
         if ((self.cycle >= 2 and self.cycle < 258) //
         or (self.cycle >= 321 and self.cycle < 338)) {
             self.UpdateShifter();
-            // switch (@mod(self.cycle - 1, 8)) {
-            //     0 => {
-            //         self.LoadBGShifter();
-            //         const vreg: u16 = @bitCast(self.vreg);
-            //         self.bg_next_title_id = self.internalRead(0x2000 | (vreg & 0x0FFF));
-            //     },
-            //     2 => {
-            //         self.bg_next_title_attrib = self.internalRead(0x23C0 //
-            //         | @as(u16, self.vreg.nametable_y) << 11 //
-            //         | @as(u16, self.vreg.nametable_x) << 10 //
-            //         | @as(u6, self.vreg.coarse_y >> 2) << 3 //
-            //         | self.vreg.coarse_x >> 2);
-            //         if (self.vreg.coarse_y & 0x02 != 0) {
-            //             self.bg_next_title_attrib >>= 4;
-            //         }
-            //         if (self.vreg.coarse_x & 0x02 != 0) {
-            //             self.bg_next_title_attrib >>= 2;
-            //         }
-            //         self.bg_next_title_attrib &= 0b11;
-            //     },
-            //     4 => {
-            //         const tmp = @as(u16, self.bg_next_title_id) * 16 + @as(u16, self.ctrl.BGPatternTableAddr) * 0x1000;
-            //         self.bg_next_title_lsb = self.internalRead(tmp + self.vreg.fine_y);
-            //     },
-            //     6 => {
-            //         const tmp = @as(u16, self.bg_next_title_id) * 16 + @as(u16, self.ctrl.BGPatternTableAddr) * 0x1000;
-            //         self.bg_next_title_msb = self.internalRead(tmp + self.vreg.fine_y + 8);
-            //     },
-            //     7 => self.IncX(),
-            //     else => {},
-            // }
             if (@mod(self.cycle - 1, 8) == 7) {
                 self.LoadBGShifter();
                 const vreg: u16 = @bitCast(self.vreg);
@@ -190,7 +162,7 @@ pub fn clock(self: *PPU, renderer: *sdl.Renderer) !void {
     }
 
     if (self.scanline == 240) {
-        // Placeholder for something
+        self.should_draw = false;
     }
 
     // if (self.scanline >= 241 and self.scanline < 261) {
@@ -202,7 +174,7 @@ pub fn clock(self: *PPU, renderer: *sdl.Renderer) !void {
 
     // Draw
     var pixel: u4 = 0;
-    if (self.mask.ShowBG and self.scanline < 240 and self.cycle < 256) {
+    if (self.mask.ShowBG and self.should_draw) {
         const bit_mux: u16 = @as(u16, 0x8000) >> self.fine_x;
         if (self.bg_shifter_pattern_lo & bit_mux != 0) {
             pixel |= 0b0001;
@@ -216,8 +188,12 @@ pub fn clock(self: *PPU, renderer: *sdl.Renderer) !void {
         if (self.bg_shifter_attrib_hi & bit_mux != 0) {
             pixel |= 0b1000;
         }
-        try renderer.setDrawColor(colors[self.imagePalette[pixel]]);
-        try renderer.drawPoint(self.cycle - 1, self.scanline);
+        const tmp = colors[self.imagePalette[pixel]];
+        texture_data[self.texture_pixel_count + 0] = tmp.a;
+        texture_data[self.texture_pixel_count + 1] = tmp.b;
+        texture_data[self.texture_pixel_count + 2] = tmp.g;
+        texture_data[self.texture_pixel_count + 3] = tmp.r;
+        self.texture_pixel_count += 4;
     }
 
     self.cycle += 1;
@@ -241,7 +217,6 @@ pub fn printNametable1(self: *PPU) !void {
 }
 
 pub fn read(self: *PPU, addr: u16) u8 {
-    //     std.debug.print("CPU reading from {x}\n", .{addr});
     const real_addr = addr % 8 + 0x2000;
     return switch (real_addr) {
         0x2000 => @bitCast(self.ctrl),
@@ -271,7 +246,6 @@ pub fn read(self: *PPU, addr: u16) u8 {
 }
 
 pub fn write(self: *PPU, addr: u16, data: u8) void {
-    //     std.debug.print("CPU writing to {x}\n", .{addr});
     switch (addr) {
         0x2000 => {
             self.ctrl = @bitCast(data);
@@ -349,7 +323,6 @@ fn find(arr: []const u8, pred: anytype) bool {
 }
 
 fn internalRead(self: *PPU, addr: u16) u8 {
-    // std.debug.print("{}\n", .{addr});
     return switch (addr) {
         0x0000...0x1FFF => self.CHR_ROM[self.mapper.ppuDecode(addr)],
         0x2000...0x2FFF => self.nametable[self.resolveNametableAddr(addr)],
@@ -449,63 +422,6 @@ const PPUSTATUS = packed struct(u8) {
     SpriteOverflow: bool,
     SpriteZeroHit: bool,
     VBlank: bool,
-};
-
-const Title = struct {
-    data: [8]u16,
-
-    inline fn set(raw: []u16, x: u3, y: u3, data: u2) void {
-        const xx: u4 = x;
-        const index = ~(@as(u16, 3) << (@as(u4, 14) - xx * 2));
-        const data_shifted = @as(u16, @intCast(data)) << (@as(u4, 14) - xx * 2);
-        raw[y] = raw[y] & index | data_shifted;
-    }
-
-    inline fn getBit(num: u8, idx: u3) u1 {
-        return @truncate(num >> (7 - idx) & 1);
-    }
-
-    pub fn init(raw: []u8) Title {
-        var res: [8]u16 = undefined;
-        const lsb = raw[0..8];
-        const msb = raw[8..16];
-        for (0..8) |tmpY| {
-            const yy: u3 = @truncate(tmpY);
-            const currentByteLo = lsb[yy];
-            const currentByteHi = msb[yy];
-            for (0..8) |tmpX| {
-                const xx: u3 = @truncate(tmpX);
-                const j: u3 = @truncate(tmpX);
-                var pixel: u2 = getBit(currentByteHi, j);
-                pixel <<= 1;
-                pixel |= getBit(currentByteLo, j);
-                set(&res, xx, yy, pixel);
-            }
-        }
-        return Title{ .data = res };
-    }
-
-    pub inline fn get(self: *Title, index: usize) u4 {
-        const tmp = self.data[index / 4];
-        return (tmp >> (index % 4 * 2)) & 0x0F;
-    }
-
-    pub fn draw(self: *Title, renderer: *sdl.Renderer, pos_x: i32, pos_y: i32, attribute: u2) !void {
-        const attr: u4 = attribute;
-        for (0..8) |y| {
-            const yy: i32 = @truncate(y);
-            for (0..8) |x| {
-                const xx: i32 = @truncate(x);
-                var colorIndex = self.get(y * 8 + x);
-                if (colorIndex == 0) {
-                    continue;
-                }
-                colorIndex |= attr << 2;
-                try renderer.setDrawColor(colors[colorIndex]);
-                try renderer.drawPoint(xx + pos_x, yy + pos_y);
-            }
-        }
-    }
 };
 
 const colors = [_]sdl.Color{

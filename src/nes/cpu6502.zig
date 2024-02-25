@@ -256,7 +256,7 @@ fn logDbg(self: *CPU, instruction_name: []const u8, addr_mode: u8, am_res: AMRes
     //     return;
     // }
     if (comptime log_full) {
-        std.fmt.format(outf, "{X:0>4} {s} {s:16} r:{X:0>2} a:{X:0>4},A:{X:0>2} X:{X:0>2} Y:{X:0>2} SP:{X:0>2} F:{X:0>2},2002:{X:0>2},PPU:{:3},{:3},CYC:{}\n", .{
+        std.fmt.format(outf, "{X:0>4} {s} {s:16} r:{X:0>2} a:{X:0>4},A:{X:0>2} X:{X:0>2} Y:{X:0>2} SP:{X:0>2} F:{X:0>2},PPU:{:3},{:3},CYC:{}\n", .{
             self.pc,
             instruction_name,
             @tagName(@as(enum_tag, (@enumFromInt(addr_mode)))),
@@ -267,7 +267,6 @@ fn logDbg(self: *CPU, instruction_name: []const u8, addr_mode: u8, am_res: AMRes
             self.y,
             self.sp,
             @as(u8, @bitCast(self.status)),
-            @as(u8, @bitCast(self.bus.ppu.status)),
             self.bus.ppu.scanline,
             self.bus.ppu.cycle,
             self.cycle_count,

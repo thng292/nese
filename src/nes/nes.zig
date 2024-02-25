@@ -12,35 +12,44 @@ const Mapper = @import("mapper.zig");
 
 const Nes = @This();
 const dot_per_frame = 341 * 262;
-rom: Rom,
-cpu: CPU,
-bus: Bus,
-mapperMem: MapperUnion,
+rom: Rom = undefined,
+cpu: CPU = undefined,
+bus: Bus = undefined,
+mapperMem: MapperUnion = undefined,
 counter: u128 = 0,
+game_screen: *sdl.Texture = undefined,
 
-pub fn init(allocator: std.mem.Allocator, rom_file: std.fs.File) !Nes {
-    var res = Nes{
+pub fn init(allocator: std.mem.Allocator, rom_file: std.fs.File, game_screen: *sdl.Texture) !Nes {
+    var format: sdl.PixelFormatEnum = undefined;
+    var access: sdl.TextureAccess = undefined;
+    try game_screen.query(&format, &access, null, null);
+    if (format != .rgba8888) {
+        @panic("Wrong texture format");
+    }
+    if (access != .streaming) {
+        @panic("Wrong texture access");
+    }
+    return Nes{
         .rom = try Rom.readFromFile(rom_file, allocator),
         .cpu = undefined,
         .bus = undefined,
         .mapperMem = undefined,
+        .game_screen = game_screen,
     };
-    const mapper = try createMapper(&res.rom, &res.mapperMem);
-    res.bus = Bus{
+}
+
+pub fn startup(self: *Nes) !void {
+    const mapper = try createMapper(&self.rom, &self.mapperMem);
+    self.bus = Bus{
         .mapper = mapper,
         .ram = Ram{},
-        .ppu = try PPU.init(mapper, &res.rom),
+        .ppu = try PPU.init(mapper, &self.rom),
         .control = Control{},
         .apu = APU{},
     };
-    res.cpu = CPU{
-        .bus = undefined,
+    self.cpu = CPU{
+        .bus = &self.bus,
     };
-    return res;
-}
-
-pub fn startup(self: *Nes) void {
-    self.cpu.bus = &self.bus;
     self.cpu.reset();
 }
 
@@ -52,9 +61,11 @@ pub fn handleKey(self: *Nes, event: sdl.Event) void {
     self.bus.control.handleKeyDownEvent(event);
 }
 
-pub fn runFrame(self: *Nes, renderer: *sdl.Renderer) !void {
+pub fn runFrame(self: *Nes) !void {
+    const data = try self.game_screen.lock(null);
+    defer self.game_screen.unlock();
     for (0..dot_per_frame) |_| {
-        try self.bus.ppu.clock(renderer);
+        try self.bus.ppu.clock(data.pixels);
         if (self.counter % 3 == 0) {
             try self.cpu.step();
         }
@@ -87,7 +98,7 @@ fn createMapper(rom: *Rom, mapperMem: *MapperUnion) !Mapper {
     switch (rom.header.getMapperID()) {
         0 => {
             mapperMem.* = MapperUnion{ .mapper0 = Mapper0.init(rom) };
-            return Mapper.toMapper(&mapperMem.*.mapper0);
+            return Mapper.toMapper(&mapperMem.mapper0);
         },
         else => {
             return CrateMapperError.MapperNotSupported;
