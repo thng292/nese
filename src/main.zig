@@ -11,7 +11,7 @@ pub fn main() !void {
     try sdl.init(sdl.InitFlags.everything);
     defer sdl.quit();
 
-    // const out = try std.fs.cwd().openFile("out2.txt", .{ .mode = .write_only });
+    // const out = try std.fs.cwd().openFile("me.txt", .{ .mode = .write_only });
     // defer out.close();
     // CPU.outf = out.writer().any();
 
@@ -38,8 +38,8 @@ pub fn main() !void {
     );
     defer game_screen.destroy();
 
-    const testRomFile = try std.fs.cwd().openFile("test-rom/nestest.nes", .{});
-    // const testRomFile = try std.fs.cwd().openFile("test-rom/donkey kong.nes", .{});
+    // const testRomFile = try std.fs.cwd().openFile("test-rom/nestest.nes", .{});
+    const testRomFile = try std.fs.cwd().openFile("test-rom/donkey kong.nes", .{});
     defer testRomFile.close();
     var nes = try Nes.init(std.heap.page_allocator, testRomFile, game_screen);
     defer nes.deinit();
@@ -80,7 +80,6 @@ pub fn main() !void {
             run = false;
         }
 
-        try main_wind.renderer.setTarget(null);
         try main_wind.renderer.copyEx(game_screen, null, &destiation_rect, 0, null, .none);
         main_wind.renderer.present();
 

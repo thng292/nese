@@ -12,12 +12,13 @@ const Mapper = @import("mapper.zig");
 
 const Nes = @This();
 const dot_per_frame = 341 * 262;
+
 rom: Rom = undefined,
 cpu: CPU = undefined,
 bus: Bus = undefined,
 mapperMem: MapperUnion = undefined,
-counter: u128 = 0,
 game_screen: *sdl.Texture = undefined,
+counter: u64 = 0,
 
 pub fn init(allocator: std.mem.Allocator, rom_file: std.fs.File, game_screen: *sdl.Texture) !Nes {
     var format: sdl.PixelFormatEnum = undefined;
@@ -31,9 +32,6 @@ pub fn init(allocator: std.mem.Allocator, rom_file: std.fs.File, game_screen: *s
     }
     return Nes{
         .rom = try Rom.readFromFile(rom_file, allocator),
-        .cpu = undefined,
-        .bus = undefined,
-        .mapperMem = undefined,
         .game_screen = game_screen,
     };
 }
