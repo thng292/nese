@@ -30,8 +30,7 @@ vreg: VRamAddr = std.mem.zeroes(VRamAddr),
 treg: VRamAddr = std.mem.zeroes(VRamAddr),
 fine_x: u3 = 0,
 
-texture_pixel_count: u32 = 0,
-should_draw: bool = false,
+texture_pixel_count: u64 = 0,
 
 bg_shifter_pattern_lo: u16 = 0,
 bg_shifter_pattern_hi: u16 = 0,
@@ -55,7 +54,6 @@ pub fn clock(self: *PPU, texture_data: [*]u8) !void {
             self.cycle = 1;
             self.mirroring = self.mapper.getMirroringMode();
             self.texture_pixel_count = 0;
-            self.should_draw = true;
         }
 
         if (self.scanline == -1 and self.cycle == 1) {
@@ -114,9 +112,7 @@ pub fn clock(self: *PPU, texture_data: [*]u8) !void {
         }
     }
 
-    if (self.scanline == 240) {
-        self.should_draw = false;
-    }
+    // if (self.scanline == 240) {}
 
     // if (self.scanline >= 241 and self.scanline < 261) {
     if (self.scanline == 241 and self.cycle == 1) {
@@ -127,7 +123,7 @@ pub fn clock(self: *PPU, texture_data: [*]u8) !void {
 
     // Draw
     var color_out = std.mem.zeroes(sdl.Color);
-    if (self.should_draw) {
+    if (self.scanline < 240 and self.cycle < 256) {
         if (self.mask.ShowBG and (self.cycle >= 8 or self.mask.ShowBGInLM)) {
             var pixel: u4 = 0;
             const bit_mux: u16 = @as(u16, 0x8000) >> self.fine_x;
@@ -150,36 +146,38 @@ pub fn clock(self: *PPU, texture_data: [*]u8) !void {
             self.spriteEvaluate();
         }
 
-        if (self.mask.ShowSprite) {
-            for (&self.draw_list) |*val| {
-                if (val.x != 0) {
-                    val.x -= 1;
-                }
-            }
-            if (self.mask.ShowSpriteInLM or self.cycle >= 8) {
-                for (self.draw_list) |val| {
-                    if (val.shifter_hi == 0 and val.shifter_lo == 0) {
-                        continue;
-                    }
-                    if (val.x == 0) {
-                        var pixel: u8 = val.attribute.palette;
-                        pixel <<= 2;
-                        const hi = val.shifter_hi >> 7;
-                        const lo = (val.shifter_lo >> 7) << 1;
-                        pixel |= hi;
-                        pixel |= lo;
-                        color_out = colors[self.spritePalette[pixel]];
-                        break;
-                    }
-                }
-            }
-        }
+        // if (self.mask.ShowSprite) {
+        //     for (&self.draw_list) |*val| {
+        //         if (val.x != 0) {
+        //             val.x -= 1;
+        //         }
+        //     }
+        //     if (self.mask.ShowSpriteInLM or self.cycle >= 8) {
+        //         for (self.draw_list) |val| {
+        //             if (val.shifter_hi == 0 and val.shifter_lo == 0) {
+        //                 continue;
+        //             }
+        //             if (val.x == 0) {
+        //                 var pixel: u8 = val.attribute.palette;
+        //                 pixel <<= 2;
+        //                 const hi = val.shifter_hi >> 7;
+        //                 const lo = (val.shifter_lo >> 7) << 1;
+        //                 pixel |= hi;
+        //                 pixel |= lo;
+        //                 color_out = colors[self.spritePalette[pixel]];
+        //                 break;
+        //             }
+        //         }
+        //     }
+        // }
 
-        texture_data[self.texture_pixel_count + 0] = color_out.a;
-        texture_data[self.texture_pixel_count + 1] = color_out.b;
-        texture_data[self.texture_pixel_count + 2] = color_out.g;
+        // _ = texture_data;
         texture_data[self.texture_pixel_count + 3] = color_out.r;
+        texture_data[self.texture_pixel_count + 2] = color_out.g;
+        texture_data[self.texture_pixel_count + 1] = color_out.b;
+        texture_data[self.texture_pixel_count + 0] = color_out.a;
         self.texture_pixel_count += 4;
+        // std.debug.print("Pixel Count: {} {},{}\n", .{ self.texture_pixel_count, self.scanline, self.cycle });
     }
 
     self.cycle += 1;

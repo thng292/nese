@@ -15,7 +15,7 @@ pub fn main() !void {
     // defer out.close();
     // CPU.outf = out.writer().any();
 
-    CPU.outf = std.io.getStdErr().writer().any();
+    // CPU.outf = std.io.getStdErr().writer().any();
 
     const main_wind = try Window.create(
         "Nese",
