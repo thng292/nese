@@ -357,7 +357,7 @@ inline fn STA(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
     return instruction_cycle[addr_mode] - cam_res.additionalCycle;
 }
 
-fn LDA(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
+inline fn LDA(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
     var am_res = cam_res;
     if (!am_res.res_fetched) {
         am_res.res = self.bus.read(am_res.addr);
@@ -382,7 +382,7 @@ inline fn CMP(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
     return instruction_cycle[addr_mode];
 }
 
-fn SBC(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
+inline fn SBC(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
     var am_res = cam_res;
     if (!am_res.res_fetched) {
         am_res.res = self.bus.read(am_res.addr);
@@ -651,13 +651,17 @@ pub fn step(self: *CPU) !void {
 
     if (self.bus.nmiSet) {
         self.bus.nmiSet = false;
-        self.wait_cycle += self.NMI();
+        const cycle = self.NMI();
+        self.wait_cycle += cycle;
+        self.cycle_count += cycle + 1;
         return;
     }
 
     if (self.bus.irqSet and self.status.interruptDisable == 0) {
         self.bus.irqSet = false;
-        self.wait_cycle += self.IRQ();
+        const cycle = self.IRQ();
+        self.wait_cycle += cycle;
+        self.cycle_count += cycle + 1;
         return;
     }
 
@@ -700,7 +704,7 @@ pub fn step(self: *CPU) !void {
                 5 => self.LDA(addr_mode, am_res),
                 6 => self.CMP(addr_mode, am_res),
                 7 => self.SBC(addr_mode, am_res),
-                else => 0,
+                else => 1,
             };
             self.wait_cycle += am_res.additionalCycle;
         },
@@ -766,7 +770,7 @@ pub fn step(self: *CPU) !void {
                         5 => self.LDX(addr_mode, am_res),
                         6 => self.DEC(addr_mode, am_res),
                         7 => self.INC(addr_mode, am_res),
-                        else => 0,
+                        else => 1,
                     };
                     self.wait_cycle += am_res.additionalCycle;
                 },
@@ -965,7 +969,7 @@ pub fn step(self: *CPU) !void {
                             5 => self.LDY(addr_mode, am_res),
                             6 => self.CPY(addr_mode, am_res),
                             7 => self.CPX(addr_mode, am_res),
-                            else => 0,
+                            else => 1,
                         };
                         self.wait_cycle += am_res.additionalCycle;
                     }

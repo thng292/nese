@@ -15,7 +15,7 @@ pub fn main() !void {
     // defer out.close();
     // CPU.outf = out.writer().any();
 
-    // CPU.outf = std.io.getStdOut().writer().any();
+    CPU.outf = std.io.getStdErr().writer().any();
 
     const main_wind = try Window.create(
         "Nese",
@@ -38,12 +38,13 @@ pub fn main() !void {
     );
     defer game_screen.destroy();
 
-    // const testRomFile = try std.fs.cwd().openFile("test-rom/nestest.nes", .{});
-    const testRomFile = try std.fs.cwd().openFile("test-rom/donkey kong.nes", .{});
+    const testRomFile = try std.fs.cwd().openFile("test-rom/nestest.nes", .{});
+    // const testRomFile = try std.fs.cwd().openFile("test-rom/donkey kong.nes", .{});
     defer testRomFile.close();
     var nes = try Nes.init(std.heap.page_allocator, testRomFile, game_screen);
     defer nes.deinit();
     try nes.startup();
+    // nes.cpu.pc = 0xc000;
 
     var event: sdl.Event = undefined;
     var run = true;
