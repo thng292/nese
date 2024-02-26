@@ -41,7 +41,7 @@ pub fn main() !void {
     const testRomFile = try std.fs.cwd().openFile("test-rom/nestest.nes", .{});
     // const testRomFile = try std.fs.cwd().openFile("test-rom/donkey kong.nes", .{});
     defer testRomFile.close();
-    var nes = try Nes.init(std.heap.page_allocator, testRomFile, game_screen);
+    var nes = try Nes.init(std.heap.page_allocator, testRomFile);
     defer nes.deinit();
     try nes.startup();
     // nes.cpu.pc = 0xc000;
@@ -74,7 +74,7 @@ pub fn main() !void {
         if (run) {
             // Run the whole frame at once
             // Scanline by scanline
-            try nes.runFrame();
+            try nes.runFrame(game_screen);
         }
         if (step) {
             step = false;

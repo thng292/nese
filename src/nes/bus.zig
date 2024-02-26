@@ -19,7 +19,7 @@ pub const Bus = struct {
         return switch (addr) {
             0x0000...0x1FFF => self.ram.read(addr),
             0x2000...0x3FFF => self.ppu.read(addr),
-            0x4016, 0x4017 => self.control.read(addr),
+            0x4016...0x4017 => self.control.read(addr),
             0x4020...0xFFFF => self.mapper.cpuRead(addr),
             else => 0,
         };

@@ -17,27 +17,16 @@ rom: Rom = undefined,
 cpu: CPU = undefined,
 bus: Bus = undefined,
 mapperMem: MapperUnion = undefined,
-game_screen: *sdl.Texture = undefined,
 counter: u64 = 0,
 
-pub fn init(allocator: std.mem.Allocator, rom_file: std.fs.File, game_screen: *sdl.Texture) !Nes {
-    var format: sdl.PixelFormatEnum = undefined;
-    var access: sdl.TextureAccess = undefined;
-    try game_screen.query(&format, &access, null, null);
-    if (format != .rgba8888) {
-        @panic("Wrong texture format");
-    }
-    if (access != .streaming) {
-        @panic("Wrong texture access");
-    }
+pub inline fn init(allocator: std.mem.Allocator, rom_file: std.fs.File) !Nes {
     return Nes{
         .rom = try Rom.readFromFile(rom_file, allocator),
-        .game_screen = game_screen,
     };
 }
 
 pub fn startup(self: *Nes) !void {
-    const mapper = try createMapper(&self.rom, &self.mapperMem);
+    const mapper = try self.createMapper();
     self.bus = Bus{
         .mapper = mapper,
         .ram = Ram{},
@@ -59,9 +48,9 @@ pub fn handleKey(self: *Nes, event: sdl.Event) void {
     self.bus.control.handleKeyDownEvent(event);
 }
 
-pub fn runFrame(self: *Nes) !void {
-    const data = try self.game_screen.lock(null);
-    defer self.game_screen.unlock();
+pub fn runFrame(self: *Nes, game_screen: *sdl.Texture) !void {
+    const data = try game_screen.lock(null);
+    defer game_screen.unlock();
     for (0..dot_per_frame) |_| {
         try self.bus.ppu.clock(data.pixels);
         if (self.counter % 3 == 0) {
@@ -92,11 +81,11 @@ const CrateMapperError = error{
     MapperNotSupported,
 };
 
-fn createMapper(rom: *Rom, mapperMem: *MapperUnion) !Mapper {
-    switch (rom.header.getMapperID()) {
+fn createMapper(self: *Nes) !Mapper {
+    switch (self.rom.header.getMapperID()) {
         0 => {
-            mapperMem.* = MapperUnion{ .mapper0 = Mapper0.init(rom) };
-            return Mapper.toMapper(&mapperMem.mapper0);
+            self.mapperMem = MapperUnion{ .mapper0 = Mapper0.init(&self.rom) };
+            return Mapper.toMapper(&self.mapperMem.mapper0);
         },
         else => {
             return CrateMapperError.MapperNotSupported;
