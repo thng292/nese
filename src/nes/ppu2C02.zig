@@ -122,7 +122,9 @@ pub fn clock(self: *PPU, texture_data: [*]u8) !void {
     // }
 
     // Draw
-    var color_out = std.mem.zeroes(sdl.Color);
+    var sprite_behind_bg = false;
+    var color_out_sprite: u8 = 0;
+    var color_out_bg: u8 = 0;
     if (self.scanline < 240 and self.cycle < 256) {
         if (self.mask.ShowBG and (self.cycle >= 8 or self.mask.ShowBGInLM)) {
             var pixel: u4 = 0;
@@ -139,45 +141,52 @@ pub fn clock(self: *PPU, texture_data: [*]u8) !void {
             if (self.bg_shifter_attrib_hi & bit_mux != 0) {
                 pixel |= 0b1000;
             }
-            color_out = colors[self.imagePalette[pixel]];
+            color_out_bg = pixel;
         }
 
         if (self.cycle == 0) {
             self.spriteEvaluate();
         }
 
-        // if (self.mask.ShowSprite) {
-        //     for (&self.draw_list) |*val| {
-        //         if (val.x != 0) {
-        //             val.x -= 1;
-        //         }
-        //     }
-        //     if (self.mask.ShowSpriteInLM or self.cycle >= 8) {
-        //         for (self.draw_list) |val| {
-        //             if (val.shifter_hi == 0 and val.shifter_lo == 0) {
-        //                 continue;
-        //             }
-        //             if (val.x == 0) {
-        //                 var pixel: u8 = val.attribute.palette;
-        //                 pixel <<= 2;
-        //                 const hi = val.shifter_hi >> 7;
-        //                 const lo = (val.shifter_lo >> 7) << 1;
-        //                 pixel |= hi;
-        //                 pixel |= lo;
-        //                 color_out = colors[self.spritePalette[pixel]];
-        //                 break;
-        //             }
-        //         }
-        //     }
-        // }
+        if (self.mask.ShowSprite) {
+            for (&self.draw_list) |*val| {
+                if (val.x != 0) {
+                    val.x -= 1;
+                    if (val.x == 0) {
+                        if (val.attribute.drawing == false) {
+                            val.x = 7;
+                        }
+                        val.attribute.drawing = !val.attribute.drawing;
+                    }
+                }
+            }
+            if (self.mask.ShowSpriteInLM or self.cycle >= 8) {
+                for (&self.draw_list) |*val| {
+                    if (val.attribute.drawing) {
+                        var pixel: u8 = val.attribute.palette;
+                        pixel <<= 2;
+                        const hi = val.shifter_hi >> 7;
+                        const lo = (val.shifter_lo >> 7) << 1;
+                        pixel |= hi;
+                        pixel |= lo;
+                        color_out_sprite = pixel;
+                        sprite_behind_bg = val.attribute.behindBG;
+                        val.shifter_hi <<= 1;
+                        val.shifter_lo <<= 1;
+                        break;
+                    }
+                }
+            }
+        }
 
         // _ = texture_data;
+        // const color_out = if (sprite_top) color_out_sprite else color_out_bg;
+        const color_out = colors[self.imagePalette[color_out_bg]];
         texture_data[self.texture_pixel_count + 3] = color_out.r;
         texture_data[self.texture_pixel_count + 2] = color_out.g;
         texture_data[self.texture_pixel_count + 1] = color_out.b;
         texture_data[self.texture_pixel_count + 0] = color_out.a;
         self.texture_pixel_count += 4;
-        // std.debug.print("Pixel Count: {} {},{}\n", .{ self.texture_pixel_count, self.scanline, self.cycle });
     }
 
     self.cycle += 1;
@@ -239,12 +248,13 @@ inline fn UpdateShifter(self: *PPU) void {
     }
 }
 
-inline fn spriteEvaluate(self: *PPU) void {
+fn spriteEvaluate(self: *PPU) void {
     var i: u16 = 0;
     var tail: u8 = 0;
     const spriteHeight: u8 = if (self.ctrl.height16) 16 else 8;
     while (i < 256 and tail < 8) : (i += 4) {
-        if (self.scanline - self.oam[i] < spriteHeight) {
+        const difference = self.scanline - self.oam[i];
+        if (0 <= difference and difference < spriteHeight) {
             const offset_top_: i8 = @truncate(self.scanline - self.oam[i]);
             const offset_top: u8 = @bitCast(offset_top_);
             const title_id: u16 = self.oam[i + 1];
@@ -276,6 +286,7 @@ inline fn spriteEvaluate(self: *PPU) void {
 
             self.draw_list[tail].attribute.spriteZero = i == 0;
             self.draw_list[tail].x = self.oam[i + 3];
+            self.draw_list[tail].attribute.drawing = false;
 
             tail += 1;
         }
@@ -464,7 +475,8 @@ const ToBeDrawn = struct {
 const SpriteAttribute = packed struct(u8) {
     palette: u2 = 0,
     spriteZero: bool = 0,
-    _zero: u2 = 0,
+    drawing: bool = false,
+    _zero: u1 = 0,
     behindBG: bool = false,
     flip_horizontal: bool = false,
     flip_vertical: bool = false,

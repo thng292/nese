@@ -85,7 +85,7 @@ fn createMapper(self: *Nes) !Mapper {
     switch (self.rom.header.getMapperID()) {
         0 => {
             self.mapperMem = MapperUnion{ .mapper0 = Mapper0.init(&self.rom) };
-            return Mapper.toMapper(&self.mapperMem.mapper0);
+            return self.mapperMem.mapper0.toMapper();
         },
         else => {
             return CrateMapperError.MapperNotSupported;

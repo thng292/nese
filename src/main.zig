@@ -30,27 +30,39 @@ pub fn main() !void {
         .h = base_screen_h * scale,
         .w = base_screen_w * scale,
     };
-    const game_screen = try main_wind.renderer.createTexture(
+    const game_screen = main_wind.renderer.createTexture(
         .rgba8888,
         .streaming,
         base_screen_w,
         base_screen_h,
-    );
+    ) catch |err| {
+        sdl.showSimpleMessageBox(.{ .err = true }, "Error", @errorName(err), main_wind.window) catch {};
+        return;
+    };
     defer game_screen.destroy();
 
-    const testRomFile = try std.fs.cwd().openFile("test-rom/nestest.nes", .{});
-    // const testRomFile = try std.fs.cwd().openFile("test-rom/donkey kong.nes", .{});
+    const testRomFile = std.fs.cwd().openFile("test-rom/donkey kong.nes", .{}) catch |err| {
+        // const testRomFile = std.fs.cwd().openFile("test-rom/nestest.nes", .{}) catch |err| {
+        sdl.showSimpleMessageBox(.{ .err = true }, "Error", @errorName(err), main_wind.window) catch {};
+        return;
+    };
     defer testRomFile.close();
-    var nes = try Nes.init(std.heap.page_allocator, testRomFile);
+    var nes = Nes.init(std.heap.page_allocator, testRomFile) catch |err| {
+        sdl.showSimpleMessageBox(.{ .err = true }, "Error", @errorName(err), main_wind.window) catch {};
+        return;
+    };
     defer nes.deinit();
-    try nes.startup();
+    nes.startup() catch |err| {
+        sdl.showSimpleMessageBox(.{ .err = true }, "Error", @errorName(err), main_wind.window) catch {};
+        return;
+    };
     // nes.cpu.pc = 0xc000;
 
     var event: sdl.Event = undefined;
     var run = true;
     var step = false;
 
-    var start = std.time.milliTimestamp();
+    var start = sdl.getPerformanceCounter();
     while (true) {
         while (sdl.pollEvent(&event)) {
             switch (event.type) {
@@ -74,23 +86,32 @@ pub fn main() !void {
         if (run) {
             // Run the whole frame at once
             // Scanline by scanline
-            try nes.runFrame(game_screen);
+            nes.runFrame(game_screen) catch |err| {
+                sdl.showSimpleMessageBox(.{ .err = true }, "Error", @errorName(err), main_wind.window) catch {};
+                return;
+            };
         }
         if (step) {
             step = false;
             run = false;
         }
 
-        try main_wind.renderer.copyEx(game_screen, null, &destiation_rect, 0, null, .none);
+        main_wind.renderer.copyEx(game_screen, null, &destiation_rect, 0, null, .none) catch |err| {
+            sdl.showSimpleMessageBox(.{ .err = true }, "Error", @errorName(err), main_wind.window) catch {};
+            return;
+        };
         main_wind.renderer.present();
 
-        const now = std.time.milliTimestamp();
-        const elapsed = now - start;
+        const performance_counter_freq: f64 = @floatFromInt(sdl.getPerformanceFrequency() / 1000);
+        const now = sdl.getPerformanceCounter();
+        const elapsed: f64 = @floatFromInt(now - start);
+        const elapsedMS = elapsed / performance_counter_freq;
         start = now;
-        const tmp = 17 - elapsed;
-        if (tmp > 0) {
-            const tt: u64 = @bitCast(tmp);
-            sdl.delay(@truncate(tt));
+        const frame_deadline = @as(f64, 1000) / 60;
+        const delay: i64 = @intFromFloat(@floor(frame_deadline - elapsedMS));
+        if (delay > 0) {
+            const tmp: u64 = @bitCast(delay);
+            sdl.delay(@truncate(tmp));
         }
     }
 }

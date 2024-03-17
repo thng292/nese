@@ -43,3 +43,7 @@ pub fn getNMIScanline(self: *Self) u16 {
     _ = self;
     return 400;
 }
+
+pub fn toMapper(self: *Self) mapperInterface {
+    return mapperInterface.toMapper(self);
+}
