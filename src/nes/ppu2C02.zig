@@ -461,46 +461,38 @@ fn internalWrite(self: *PPU, addr: u16, data: u8) void {
         0x3F00...0x3F0F => {
             const tmp = addr - 0x3F00;
             self.imagePalette[tmp] = data;
-            if (tmp % 4 == 0) {
-                self.imagePalette[0] = data;
-                self.imagePalette[4] = data;
-                self.imagePalette[8] = data;
-                self.imagePalette[12] = data;
-            }
+            self.assignBGColor(tmp, data);
         },
         0x3F10...0x3F1F => {
             const tmp = addr - 0x3F10;
             self.spritePalette[tmp] = data;
-            if (tmp % 4 == 0) {
-                self.spritePalette[0] = data;
-                self.spritePalette[4] = data;
-                self.spritePalette[8] = data;
-                self.spritePalette[12] = data;
-            }
+            self.assignBGColor(tmp, data);
         },
         0x3F20...0x3FFF => {
             const real_addr = addr - 0x3F20;
             const tmp = real_addr % 16;
             if (real_addr % 32 >= 16) {
                 self.spritePalette[tmp] = data;
-                if (tmp % 4 == 0) {
-                    self.spritePalette[0] = data;
-                    self.spritePalette[4] = data;
-                    self.spritePalette[8] = data;
-                    self.spritePalette[12] = data;
-                }
             } else {
                 self.imagePalette[tmp] = data;
-                if (tmp % 4 == 0) {
-                    self.imagePalette[0] = data;
-                    self.imagePalette[4] = data;
-                    self.imagePalette[8] = data;
-                    self.imagePalette[12] = data;
-                }
             }
+            self.assignBGColor(tmp, data);
         },
         else => unreachable,
     };
+}
+
+fn assignBGColor(self: *PPU, tmp: u16, data: u8) void {
+    if (tmp == 0) {
+        self.spritePalette[0] = data;
+        self.spritePalette[4] = data;
+        self.spritePalette[8] = data;
+        self.spritePalette[12] = data;
+        self.imagePalette[0] = data;
+        self.imagePalette[4] = data;
+        self.imagePalette[8] = data;
+        self.imagePalette[12] = data;
+    }
 }
 
 pub fn printNametable1(self: *PPU) !void {
