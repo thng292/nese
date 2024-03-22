@@ -63,29 +63,39 @@ pub fn clock(self: *PPU, texture_data: [*]u8) !void {
         if ((self.cycle >= 2 and self.cycle < 258) //
         or (self.cycle >= 321 and self.cycle < 338)) {
             self.UpdateShifter();
-            if (@mod(self.cycle - 1, 8) == 7) {
-                self.LoadBGShifter();
-                const vreg: u16 = @bitCast(self.vreg);
-                self.bg_next_title_id = self.internalRead(0x2000 | (vreg & 0x0FFF));
-
-                self.bg_next_title_attrib = self.internalRead(0x23C0 //
-                | @as(u16, self.vreg.nametable_y) << 11 //
-                | @as(u16, self.vreg.nametable_x) << 10 //
-                | @as(u6, self.vreg.coarse_y >> 2) << 3 //
-                | self.vreg.coarse_x >> 2);
-                if (self.vreg.coarse_y & 0x02 != 0) {
-                    self.bg_next_title_attrib >>= 4;
-                }
-                if (self.vreg.coarse_x & 0x02 != 0) {
-                    self.bg_next_title_attrib >>= 2;
-                }
-                self.bg_next_title_attrib &= 0b11;
-
-                const tmp = @as(u16, self.bg_next_title_id) * 16 + @as(u16, self.ctrl.BGPatternTableAddr) * 0x1000;
-                self.bg_next_title_lsb = self.internalRead(tmp + self.vreg.fine_y);
-                self.bg_next_title_msb = self.internalRead(tmp + self.vreg.fine_y + 8);
-
-                self.IncX();
+            // Fetching the new title
+            switch (@mod(self.cycle - 1, 8)) {
+                0 => {
+                    self.LoadBGShifter();
+                    const vreg: u16 = @bitCast(self.vreg);
+                    self.bg_next_title_id = self.internalRead(0x2000 | (vreg & 0x0FFF));
+                },
+                2 => {
+                    self.bg_next_title_attrib = self.internalRead(0x23C0 //
+                    | @as(u16, self.vreg.nametable_y) << 11 //
+                    | @as(u16, self.vreg.nametable_x) << 10 //
+                    | @as(u6, self.vreg.coarse_y >> 2) << 3 //
+                    | self.vreg.coarse_x >> 2);
+                    if (self.vreg.coarse_y & 0b10 != 0) {
+                        self.bg_next_title_attrib >>= 4;
+                    }
+                    if (self.vreg.coarse_x & 0b10 != 0) {
+                        self.bg_next_title_attrib >>= 2;
+                    }
+                    self.bg_next_title_attrib &= 0b11;
+                },
+                4 => {
+                    const tmp = @as(u16, self.bg_next_title_id) * 16 + @as(u16, self.ctrl.BGPatternTableAddr) * 0x1000;
+                    self.bg_next_title_lsb = self.internalRead(tmp + self.vreg.fine_y);
+                },
+                6 => {
+                    const tmp = @as(u16, self.bg_next_title_id) * 16 + @as(u16, self.ctrl.BGPatternTableAddr) * 0x1000;
+                    self.bg_next_title_msb = self.internalRead(tmp + self.vreg.fine_y + 8);
+                },
+                7 => {
+                    self.IncX();
+                },
+                else => {},
             }
         }
 
@@ -125,67 +135,91 @@ pub fn clock(self: *PPU, texture_data: [*]u8) !void {
     var sprite_behind_bg = false;
     var color_out_sprite: u8 = 0;
     var color_out_bg: u8 = 0;
-    if (self.scanline < 240 and self.cycle < 256) {
-        if (self.mask.ShowBG and (self.cycle >= 8 or self.mask.ShowBGInLM)) {
-            var pixel: u4 = 0;
-            const bit_mux: u16 = @as(u16, 0x8000) >> self.fine_x;
-            if (self.bg_shifter_pattern_lo & bit_mux != 0) {
-                pixel |= 0b0001;
-            }
-            if (self.bg_shifter_pattern_hi & bit_mux != 0) {
-                pixel |= 0b0010;
-            }
-            if (self.bg_shifter_attrib_lo & bit_mux != 0) {
-                pixel |= 0b0100;
-            }
-            if (self.bg_shifter_attrib_hi & bit_mux != 0) {
-                pixel |= 0b1000;
-            }
-            color_out_bg = pixel;
+    if (self.mask.ShowBG and (self.cycle >= 8 or self.mask.ShowBGInLM)) {
+        var pixel: u4 = 0;
+        const bit_mux: u16 = @as(u16, 0x8000) >> self.fine_x;
+        if (self.bg_shifter_pattern_lo & bit_mux != 0) {
+            pixel |= 0b0001;
         }
-
-        if (self.cycle == 0) {
-            self.spriteEvaluate();
+        if (self.bg_shifter_pattern_hi & bit_mux != 0) {
+            pixel |= 0b0010;
         }
+        if (self.bg_shifter_attrib_lo & bit_mux != 0) {
+            pixel |= 0b0100;
+        }
+        if (self.bg_shifter_attrib_hi & bit_mux != 0) {
+            pixel |= 0b1000;
+        }
+        color_out_bg = pixel;
+    }
 
-        if (self.mask.ShowSprite) {
-            for (&self.draw_list) |*val| {
-                if (val.x != 0) {
-                    val.x -= 1;
-                    if (val.x == 0) {
-                        if (val.attribute.drawing == false) {
-                            val.x = 7;
-                        }
-                        val.attribute.drawing = !val.attribute.drawing;
+    if (self.cycle == 0) {
+        self.spriteEvaluate();
+    }
+
+    if (self.mask.ShowSprite) {
+        for (&self.draw_list) |*sprite| {
+            if (sprite.x != 0) {
+                sprite.x -= 1;
+                if (sprite.x == 0) {
+                    if (sprite.attribute.drawing == false) {
+                        sprite.x = 8;
                     }
-                }
-            }
-            if (self.mask.ShowSpriteInLM or self.cycle >= 8) {
-                for (&self.draw_list) |*val| {
-                    if (val.attribute.drawing) {
-                        var pixel: u8 = val.attribute.palette;
-                        pixel <<= 2;
-                        const hi = val.shifter_hi >> 7;
-                        const lo = (val.shifter_lo >> 7) << 1;
-                        pixel |= hi;
-                        pixel |= lo;
-                        color_out_sprite = pixel;
-                        sprite_behind_bg = val.attribute.behindBG;
-                        val.shifter_hi <<= 1;
-                        val.shifter_lo <<= 1;
-                        break;
-                    }
+                    sprite.attribute.drawing = !sprite.attribute.drawing;
                 }
             }
         }
+        if (self.mask.ShowSpriteInLM or self.cycle >= 8) {
+            for (&self.draw_list) |*sprite| {
+                if (sprite.attribute.drawing) {
+                    var pixel: u8 = sprite.attribute.palette;
+                    pixel += 4;
+                    pixel <<= 2;
+                    const lo = sprite.shifter_lo >> 7;
+                    const hi = (sprite.shifter_hi >> 7) << 1;
+                    pixel |= lo;
+                    pixel |= hi;
+                    color_out_sprite = pixel;
+                    sprite_behind_bg = sprite.attribute.behindBG;
+                    sprite.shifter_hi <<= 1;
+                    sprite.shifter_lo <<= 1;
+                    // Sprite 0 hit
+                    self.status.SpriteZeroHit = hi != 0 and lo != 0 and sprite.attribute.spriteZero and self.cycle != 255;
+                    if (color_out_sprite & 0b11 == 0) {
+                        continue;
+                    }
+                    break;
+                }
+            }
+        }
+    }
+    self.status.SpriteZeroHit = self.status.SpriteZeroHit and ((color_out_bg & 0b11) | (color_out_sprite & 0b11)) != 0;
 
-        // _ = texture_data;
-        // const color_out = if (sprite_top) color_out_sprite else color_out_bg;
-        const color_out = colors[self.imagePalette[color_out_bg]];
-        texture_data[self.texture_pixel_count + 3] = color_out.r;
-        texture_data[self.texture_pixel_count + 2] = color_out.g;
-        texture_data[self.texture_pixel_count + 1] = color_out.b;
-        texture_data[self.texture_pixel_count + 0] = color_out.a;
+    // _ = texture_data;
+    var color_out: u8 = 0;
+    const palette_offset: u16 = 0x3F00;
+    if (sprite_behind_bg) {
+        if (color_out_bg & 0b11 == 0) { // BG's pixel is transparent
+            color_out = color_out_sprite;
+        } else {
+            color_out = color_out_bg;
+            // palette_offset += 0x10;
+        }
+    } else {
+        if (color_out_sprite & 0b11 == 0) { // Sprite's pixel is transparent
+            color_out = color_out_bg;
+            // palette_offset += 0x10;
+        } else {
+            color_out = color_out_sprite;
+        }
+    }
+    // color_out = color_out_bg;
+    if (0 <= self.cycle - 1 and self.cycle - 1 < 256 and self.scanline <= 240) {
+        const pixel = colors[self.internalRead(palette_offset + @as(u16, color_out))];
+        texture_data[self.texture_pixel_count + 3] = pixel.r;
+        texture_data[self.texture_pixel_count + 2] = pixel.g;
+        texture_data[self.texture_pixel_count + 1] = pixel.b;
+        texture_data[self.texture_pixel_count + 0] = pixel.a;
         self.texture_pixel_count += 4;
     }
 
@@ -248,14 +282,24 @@ inline fn UpdateShifter(self: *PPU) void {
     }
 }
 
-fn spriteEvaluate(self: *PPU) void {
+inline fn spriteEvaluate(self: *PPU) void {
     var i: u16 = 0;
     var tail: u8 = 0;
     const spriteHeight: u8 = if (self.ctrl.height16) 16 else 8;
-    while (i < 256 and tail < 8) : (i += 4) {
-        const difference = self.scanline - self.oam[i];
+    @memset(&self.draw_list, ToBeDrawn{
+        .x = 0xFF,
+        .shifter_hi = 0,
+        .shifter_lo = 0,
+        .attribute = SpriteAttribute{},
+    });
+    while (i < 256 and tail < 9) : (i += 4) {
+        const difference = self.scanline - self.oam[i] - 1;
         if (0 <= difference and difference < spriteHeight) {
-            const offset_top_: i8 = @truncate(self.scanline - self.oam[i]);
+            if (tail == 8) {
+                self.status.SpriteOverflow = true;
+                break;
+            }
+            const offset_top_: i8 = @truncate(difference);
             const offset_top: u8 = @bitCast(offset_top_);
             const title_id: u16 = self.oam[i + 1];
             self.draw_list[tail].attribute = @bitCast(self.oam[i + 2]);
@@ -269,7 +313,7 @@ fn spriteEvaluate(self: *PPU) void {
                     addr = (title_id + @divTrunc(offset_top, 8)) * 16 + offset_top;
                 }
             } else {
-                addr = title_id * 16 + offset_top + @as(u16, self.ctrl.BGPatternTableAddr) * 0x1000;
+                addr = title_id * 16 + @as(u16, self.ctrl.SpritePatternTableAddr) * 0x1000;
                 if (self.draw_list[tail].attribute.flip_vertical) {
                     addr += 7 - offset_top;
                 } else {
@@ -279,27 +323,16 @@ fn spriteEvaluate(self: *PPU) void {
 
             self.draw_list[tail].shifter_lo = self.internalRead(addr);
             self.draw_list[tail].shifter_hi = self.internalRead(addr + 8);
+            self.draw_list[tail].attribute.spriteZero = i == 0;
+            self.draw_list[tail].attribute.drawing = false;
+            self.draw_list[tail].x = self.oam[i + 3];
             if (self.draw_list[tail].attribute.flip_horizontal) {
                 self.draw_list[tail].shifter_lo = @bitReverse(self.draw_list[tail].shifter_lo);
                 self.draw_list[tail].shifter_hi = @bitReverse(self.draw_list[tail].shifter_hi);
             }
 
-            self.draw_list[tail].attribute.spriteZero = i == 0;
-            self.draw_list[tail].x = self.oam[i + 3];
-            self.draw_list[tail].attribute.drawing = false;
-
             tail += 1;
         }
-    }
-}
-
-pub fn printNametable1(self: *PPU) !void {
-    const stdout = std.io.getStdOut().writer();
-    for (0..30) |y| {
-        for (0..32) |x| {
-            try std.fmt.format(stdout, "{x:2} ", .{self.nametable[y * 32 + x]});
-        }
-        try std.fmt.format(stdout, "\n", .{});
     }
 }
 
@@ -314,7 +347,7 @@ pub fn read(self: *PPU, addr: u16) u8 {
             self.addr_latch = false;
             break :blk @bitCast(res);
         },
-        0x2004 => self.oam[self.oam_addr], // OAM SHIT HERE
+        0x2004 => self.oam[self.oam_addr],
         0x2007 => blk: {
             var res = self.data_buff;
             var tmp: u16 = @bitCast(self.vreg);
@@ -344,7 +377,7 @@ pub fn write(self: *PPU, addr: u16, data: u8) void {
         0x2004 => {
             self.oam[self.oam_addr] = data;
             self.oam_addr +%= 1;
-        }, // OAM SHIT HERE
+        },
         0x2005 => {
             if (self.addr_latch) {
                 self.treg.coarse_y = @truncate(data >> 3);
@@ -364,6 +397,7 @@ pub fn write(self: *PPU, addr: u16, data: u8) void {
                 treg &= 0xFF00;
                 treg |= tmp;
                 self.vreg = @bitCast(treg);
+                // std.debug.print("Vreg is now: {}\n", .{treg});
             } else { // Lo byte
                 tmp &= 0x3F;
                 treg &= 0x00FF;
@@ -399,16 +433,6 @@ fn resolveNametableAddr(self: *PPU, addr: u16) u16 {
     return nametable_num * 0x400 + ntindex;
 }
 
-const transparent_idx = [_]u8{ 0, 4, 8, 12 };
-fn find(arr: []const u8, pred: anytype) bool {
-    for (arr) |elem| {
-        if (elem == pred) {
-            return true;
-        }
-    }
-    return false;
-}
-
 fn internalRead(self: *PPU, addr: u16) u8 {
     return switch (addr) {
         0x0000...0x1FFF => self.CHR_ROM[self.mapper.ppuDecode(addr)],
@@ -420,14 +444,8 @@ fn internalRead(self: *PPU, addr: u16) u8 {
             const real_addr = addr - 0x3F20;
             const tmp = real_addr % 16;
             if (real_addr % 32 >= 16) {
-                if (find(&transparent_idx, tmp)) {
-                    break :blk self.spritePalette[0];
-                }
                 break :blk self.spritePalette[tmp];
             } else {
-                if (find(&transparent_idx, tmp)) {
-                    break :blk self.imagePalette[0];
-                }
                 break :blk self.imagePalette[tmp];
             }
         },
@@ -440,29 +458,87 @@ fn internalWrite(self: *PPU, addr: u16, data: u8) void {
         0x0000...0x1FFF => self.CHR_ROM[self.mapper.ppuDecode(addr)] = data,
         0x2000...0x2FFF => self.nametable[self.resolveNametableAddr(addr)] = data,
         0x3000...0x3EFF => self.nametable[self.resolveNametableAddr(addr - 0x3000 + 0x2000)] = data,
-        0x3F00...0x3F0F => self.imagePalette[addr - 0x3F00] = data,
-        0x3F10...0x3F1F => self.spritePalette[addr - 0x3F10] = data,
+        0x3F00...0x3F0F => {
+            const tmp = addr - 0x3F00;
+            self.imagePalette[tmp] = data;
+            if (tmp % 4 == 0) {
+                self.imagePalette[0] = data;
+                self.imagePalette[4] = data;
+                self.imagePalette[8] = data;
+                self.imagePalette[12] = data;
+            }
+        },
+        0x3F10...0x3F1F => {
+            const tmp = addr - 0x3F10;
+            self.spritePalette[tmp] = data;
+            if (tmp % 4 == 0) {
+                self.spritePalette[0] = data;
+                self.spritePalette[4] = data;
+                self.spritePalette[8] = data;
+                self.spritePalette[12] = data;
+            }
+        },
         0x3F20...0x3FFF => {
             const real_addr = addr - 0x3F20;
             const tmp = real_addr % 16;
             if (real_addr % 32 >= 16) {
                 self.spritePalette[tmp] = data;
-                if (find(&transparent_idx, tmp)) {
-                    for (transparent_idx) |i| {
-                        self.spritePalette[i] = data;
-                    }
+                if (tmp % 4 == 0) {
+                    self.spritePalette[0] = data;
+                    self.spritePalette[4] = data;
+                    self.spritePalette[8] = data;
+                    self.spritePalette[12] = data;
                 }
             } else {
                 self.imagePalette[tmp] = data;
-                if (find(&transparent_idx, tmp)) {
-                    for (transparent_idx) |i| {
-                        self.imagePalette[i] = data;
-                    }
+                if (tmp % 4 == 0) {
+                    self.imagePalette[0] = data;
+                    self.imagePalette[4] = data;
+                    self.imagePalette[8] = data;
+                    self.imagePalette[12] = data;
                 }
             }
         },
         else => unreachable,
     };
+}
+
+pub fn printNametable1(self: *PPU) !void {
+    const stdout = std.io.getStdOut().writer();
+    for (0..30) |y| {
+        for (0..32) |x| {
+            try std.fmt.format(stdout, "{x:2} ", .{self.nametable[y * 32 + x]});
+        }
+        try std.fmt.format(stdout, "\n", .{});
+    }
+}
+
+pub fn printOAM(self: *PPU) void {
+    std.debug.print("\n", .{});
+    std.debug.print("Sprite Palette================================\n", .{});
+    for (self.spritePalette) |value| {
+        std.debug.print("{X:0>2}, {}\n", .{ value, colors[value] });
+    }
+    std.debug.print("BG Palette====================================\n", .{});
+    for (self.imagePalette) |value| {
+        std.debug.print("{X:0>2}, {}\n", .{ value, colors[value] });
+    }
+    std.debug.print("State========================================\n", .{});
+    std.debug.print("CTRL: {}\n", .{self.ctrl});
+    std.debug.print("MASK: {}\n", .{self.mask});
+    std.debug.print("STATUS: {}\n", .{self.status});
+    std.debug.print("OAM==========================================\n", .{});
+    var i: u16 = 0;
+    while (i < 256) : (i += 4) {
+        std.debug.print("{{x: {}, y: {}, id: {}, attr: {X:0>2}}}\n", .{
+            .x = self.oam[i + 3],
+            .y = self.oam[i + 0],
+            .id = self.oam[i + 1],
+            .attribute = self.oam[i + 2],
+        });
+    }
+    std.debug.print("OAM==========================================\n", .{});
+    self.printNametable1() catch {};
 }
 
 const ToBeDrawn = struct {
@@ -474,7 +550,7 @@ const ToBeDrawn = struct {
 
 const SpriteAttribute = packed struct(u8) {
     palette: u2 = 0,
-    spriteZero: bool = 0,
+    spriteZero: bool = false,
     drawing: bool = false,
     _zero: u1 = 0,
     behindBG: bool = false,
@@ -537,6 +613,7 @@ const colors = [_]sdl.Color{
     sdl.Color{ .r = 0, .g = 0, .b = 0, .a = 255 },
     sdl.Color{ .r = 0, .g = 0, .b = 0, .a = 255 },
     sdl.Color{ .r = 0, .g = 0, .b = 0, .a = 255 },
+
     sdl.Color{ .r = 152, .g = 150, .b = 152, .a = 255 },
     sdl.Color{ .r = 8, .g = 76, .b = 196, .a = 255 },
     sdl.Color{ .r = 48, .g = 50, .b = 236, .a = 255 },
@@ -553,6 +630,7 @@ const colors = [_]sdl.Color{
     sdl.Color{ .r = 0, .g = 0, .b = 0, .a = 255 },
     sdl.Color{ .r = 0, .g = 0, .b = 0, .a = 255 },
     sdl.Color{ .r = 0, .g = 0, .b = 0, .a = 255 },
+
     sdl.Color{ .r = 236, .g = 238, .b = 236, .a = 255 },
     sdl.Color{ .r = 76, .g = 154, .b = 236, .a = 255 },
     sdl.Color{ .r = 120, .g = 124, .b = 236, .a = 255 },
@@ -569,6 +647,7 @@ const colors = [_]sdl.Color{
     sdl.Color{ .r = 60, .g = 60, .b = 60, .a = 255 },
     sdl.Color{ .r = 0, .g = 0, .b = 0, .a = 255 },
     sdl.Color{ .r = 0, .g = 0, .b = 0, .a = 255 },
+
     sdl.Color{ .r = 236, .g = 238, .b = 236, .a = 255 },
     sdl.Color{ .r = 168, .g = 204, .b = 236, .a = 255 },
     sdl.Color{ .r = 188, .g = 188, .b = 236, .a = 255 },

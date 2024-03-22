@@ -19,10 +19,10 @@ pub const ControllerMap = struct {
         // std.debug.print("Buffer: {b:0>8}\n", .{self.buffer});
         self.state = self.buffer;
         // std.debug.print("State:  {b:0>8}\n", .{self.state});
-        self.buffer = 0;
+        // self.buffer = 0;
     }
 
-    pub inline fn handleKey(self: *ControllerMap, key: sdl.Keycode) void {
+    pub inline fn handleKeyDown(self: *ControllerMap, key: sdl.Keycode) void {
         var bit: u3 = 0;
         if (key == self.A) bit = 7;
         if (key == self.B) bit = 6;
@@ -35,6 +35,21 @@ pub const ControllerMap = struct {
 
         const mask: u8 = 1;
         self.buffer |= mask << bit;
+    }
+
+    pub inline fn handleKeyUp(self: *ControllerMap, key: sdl.Keycode) void {
+        var bit: u3 = 0;
+        if (key == self.A) bit = 7;
+        if (key == self.B) bit = 6;
+        if (key == self.Select) bit = 5;
+        if (key == self.Start) bit = 4;
+        if (key == self.Up) bit = 3;
+        if (key == self.Down) bit = 2;
+        if (key == self.Left) bit = 1;
+        if (key == self.Right) bit = 0;
+
+        const mask: u8 = 1;
+        self.buffer &= 0xFF ^ (mask << bit);
     }
 };
 
@@ -65,7 +80,16 @@ pub inline fn handleKeyDownEvent(self: *Control, event: sdl.Event) void {
     // std.debug.print("{}\n", .{event.key.type});
     // std.debug.print("{}\n", .{self.controller1});
     // if (self.polling == true) {
-    self.controller1.handleKey(event.key.keysym.sym);
-    self.controller2.handleKey(event.key.keysym.sym);
+    self.controller1.handleKeyDown(event.key.keysym.sym);
+    self.controller2.handleKeyDown(event.key.keysym.sym);
+    // }
+}
+
+pub inline fn handleKeyUpEvent(self: *Control, event: sdl.Event) void {
+    // std.debug.print("{}\n", .{event.key.type});
+    // std.debug.print("{}\n", .{self.controller1});
+    // if (self.polling == true) {
+    self.controller1.handleKeyUp(event.key.keysym.sym);
+    self.controller2.handleKeyUp(event.key.keysym.sym);
     // }
 }

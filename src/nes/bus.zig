@@ -32,11 +32,12 @@ pub const Bus = struct {
             0x4000...0x4013, 0x4015, 0x4017 => self.apu.write(addr, data),
             0x4014 => {
                 self.dmaReq = true;
+                const dma_addr = @as(u16, data) << 8;
                 for (0..256) |ii| {
                     const i: u16 = @truncate(ii);
-                    self.ppu.oam[i] = self.ram.read(i + data);
+                    self.ppu.oam[i] = self.ram.read(i + dma_addr);
                 }
-            }, // COPY OAM DATA
+            },
             0x4016 => self.control.write(addr, data),
             0x4020...0xFFFF => self.mapper.cpuWrite(addr, data),
             else => {},

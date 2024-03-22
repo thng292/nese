@@ -5,7 +5,7 @@ const CPU = @import("nes/cpu6502.zig");
 
 const base_screen_w = 256;
 const base_screen_h = 240;
-const scale = 3;
+const scale = 4;
 
 pub fn main() !void {
     try sdl.init(sdl.InitFlags.everything);
@@ -41,7 +41,8 @@ pub fn main() !void {
     };
     defer game_screen.destroy();
 
-    const testRomFile = std.fs.cwd().openFile("test-rom/donkey kong.nes", .{}) catch |err| {
+    const testRomFile = std.fs.cwd().openFile("test-rom/Super_mario_brothers.nes", .{}) catch |err| {
+        // const testRomFile = std.fs.cwd().openFile("test-rom/donkey kong.nes", .{}) catch |err| {
         // const testRomFile = std.fs.cwd().openFile("test-rom/nestest.nes", .{}) catch |err| {
         sdl.showSimpleMessageBox(.{ .err = true }, "Error", @errorName(err), main_wind.window) catch {};
         return;
@@ -74,12 +75,13 @@ pub fn main() !void {
                             step = true;
                             run = true;
                         },
-                        else => {
-                            nes.handleKey(event);
-                        },
+                        .o => nes.bus.ppu.printOAM(),
+                        else => {},
                     }
                 },
-                else => {},
+                else => {
+                    nes.handleKey(event);
+                },
             }
         }
 
@@ -96,7 +98,7 @@ pub fn main() !void {
             run = false;
         }
 
-        main_wind.renderer.copyEx(game_screen, null, &destiation_rect, 0, null, .none) catch |err| {
+        main_wind.renderer.copy(game_screen, null, &destiation_rect) catch |err| {
             sdl.showSimpleMessageBox(.{ .err = true }, "Error", @errorName(err), main_wind.window) catch {};
             return;
         };

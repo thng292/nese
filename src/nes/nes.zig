@@ -45,7 +45,11 @@ pub fn deinit(self: *Nes) void {
 }
 
 pub fn handleKey(self: *Nes, event: sdl.Event) void {
-    self.bus.control.handleKeyDownEvent(event);
+    switch (event.type) {
+        .keydown => self.bus.control.handleKeyDownEvent(event),
+        .keyup => self.bus.control.handleKeyUpEvent(event),
+        else => {},
+    }
 }
 
 pub fn runFrame(self: *Nes, game_screen: *sdl.Texture) !void {
