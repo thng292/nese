@@ -184,7 +184,13 @@ pub fn clock(self: *PPU, texture_data: [*]u8) !void {
                     sprite.shifter_hi <<= 1;
                     sprite.shifter_lo <<= 1;
                     // Sprite 0 hit
-                    self.status.SpriteZeroHit = hi != 0 and lo != 0 and sprite.attribute.spriteZero and self.cycle != 255;
+                    if (self.status.SpriteZeroHit == false) {
+                        self.status.SpriteZeroHit = hi != 0 and lo != 0 //
+                        and sprite.attribute.spriteZero and self.cycle != 255;
+
+                        self.status.SpriteZeroHit = self.status.SpriteZeroHit //
+                        and ((color_out_bg & 0b11) | (color_out_sprite & 0b11)) != 0;
+                    }
                     if (color_out_sprite & 0b11 == 0) {
                         continue;
                     }
@@ -193,7 +199,6 @@ pub fn clock(self: *PPU, texture_data: [*]u8) !void {
             }
         }
     }
-    self.status.SpriteZeroHit = self.status.SpriteZeroHit and ((color_out_bg & 0b11) | (color_out_sprite & 0b11)) != 0;
 
     // _ = texture_data;
     var color_out: u8 = 0;
@@ -203,17 +208,15 @@ pub fn clock(self: *PPU, texture_data: [*]u8) !void {
             color_out = color_out_sprite;
         } else {
             color_out = color_out_bg;
-            // palette_offset += 0x10;
         }
     } else {
         if (color_out_sprite & 0b11 == 0) { // Sprite's pixel is transparent
             color_out = color_out_bg;
-            // palette_offset += 0x10;
         } else {
             color_out = color_out_sprite;
         }
     }
-    // color_out = color_out_bg;
+    // color_out = color_out_sprite;
     if (0 <= self.cycle - 1 and self.cycle - 1 < 256 and self.scanline <= 240) {
         const pixel = colors[self.internalRead(palette_offset + @as(u16, color_out))];
         texture_data[self.texture_pixel_count + 3] = pixel.r;
@@ -522,7 +525,7 @@ pub fn printOAM(self: *PPU) void {
     std.debug.print("OAM==========================================\n", .{});
     var i: u16 = 0;
     while (i < 256) : (i += 4) {
-        std.debug.print("{{x: {}, y: {}, id: {}, attr: {X:0>2}}}\n", .{
+        std.debug.print("{{x: {: >3}, y: {: >3}, id: {X:0>2}, attr: {X:0>2}}}\n", .{
             .x = self.oam[i + 3],
             .y = self.oam[i + 0],
             .id = self.oam[i + 1],
