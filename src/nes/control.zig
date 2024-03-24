@@ -14,12 +14,7 @@ pub const ControllerMap = struct {
     Right: sdl.Keycode = @enumFromInt('d'),
 
     pub inline fn updateState(self: *ControllerMap) void {
-        // Testing
-        // self.buffer |= 4; // Always pressing down button
-        // std.debug.print("Buffer: {b:0>8}\n", .{self.buffer});
         self.state = self.buffer;
-        // std.debug.print("State:  {b:0>8}\n", .{self.state});
-        // self.buffer = 0;
     }
 
     pub inline fn handleKeyDown(self: *ControllerMap, key: sdl.Keycode) void {
@@ -58,18 +53,13 @@ controller1: ControllerMap = ControllerMap{},
 controller2: ControllerMap = ControllerMap{},
 
 pub inline fn read(self: *Control, addr: u16) u8 {
-    // std.debug.print("Readed\n", .{});
     const controller = if (addr == 0x4016) &self.controller1 else &self.controller2;
     const tmp = controller.state;
-    // std.debug.print("tmp: {}\n", .{controller.*});
     controller.state <<= 1;
-    // std.debug.print("State: {b:0>8}\n", .{controller.state});
     return tmp >> 7;
 }
 
 pub inline fn write(self: *Control, _: u16, data: u8) void {
-    // std.debug.print("Data: {}\n", .{data});
-    // std.debug.print("Wrote\n", .{});
     if (data & 0b1 == 0) {
         self.controller1.updateState();
         self.controller2.updateState();
@@ -77,19 +67,11 @@ pub inline fn write(self: *Control, _: u16, data: u8) void {
 }
 
 pub inline fn handleKeyDownEvent(self: *Control, event: sdl.Event) void {
-    // std.debug.print("{}\n", .{event.key.type});
-    // std.debug.print("{}\n", .{self.controller1});
-    // if (self.polling == true) {
     self.controller1.handleKeyDown(event.key.keysym.sym);
     self.controller2.handleKeyDown(event.key.keysym.sym);
-    // }
 }
 
 pub inline fn handleKeyUpEvent(self: *Control, event: sdl.Event) void {
-    // std.debug.print("{}\n", .{event.key.type});
-    // std.debug.print("{}\n", .{self.controller1});
-    // if (self.polling == true) {
     self.controller1.handleKeyUp(event.key.keysym.sym);
     self.controller2.handleKeyUp(event.key.keysym.sym);
-    // }
 }

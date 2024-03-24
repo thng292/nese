@@ -135,7 +135,7 @@ pub fn clock(self: *PPU, texture_data: [*]u8) !void {
     var sprite_behind_bg = false;
     var color_out_sprite: u8 = 0;
     var color_out_bg: u8 = 0;
-    if (self.mask.ShowBG and (self.cycle >= 8 or self.mask.ShowBGInLM)) {
+    if (self.mask.ShowBG and (self.cycle > 8 or self.mask.ShowBGInLM)) {
         var pixel: u4 = 0;
         const bit_mux: u16 = @as(u16, 0x8000) >> self.fine_x;
         if (self.bg_shifter_pattern_lo & bit_mux != 0) {
@@ -161,15 +161,14 @@ pub fn clock(self: *PPU, texture_data: [*]u8) !void {
         for (&self.draw_list) |*sprite| {
             if (sprite.x != 0) {
                 sprite.x -= 1;
-                if (sprite.x == 0) {
-                    if (sprite.attribute.drawing == false) {
-                        sprite.x = 8;
-                    }
-                    sprite.attribute.drawing = !sprite.attribute.drawing;
+            } else {
+                if (sprite.attribute.drawing == false) {
+                    sprite.x = 8;
                 }
+                sprite.attribute.drawing = !sprite.attribute.drawing;
             }
         }
-        if (self.mask.ShowSpriteInLM or self.cycle >= 8) {
+        if (self.mask.ShowSpriteInLM or self.cycle > 8) {
             for (&self.draw_list) |*sprite| {
                 if (sprite.attribute.drawing) {
                     var pixel: u8 = sprite.attribute.palette;
@@ -179,8 +178,6 @@ pub fn clock(self: *PPU, texture_data: [*]u8) !void {
                     const hi = (sprite.shifter_hi >> 7) << 1;
                     pixel |= lo;
                     pixel |= hi;
-                    color_out_sprite = pixel;
-                    sprite_behind_bg = sprite.attribute.behindBG;
                     sprite.shifter_hi <<= 1;
                     sprite.shifter_lo <<= 1;
                     // Sprite 0 hit
@@ -189,12 +186,12 @@ pub fn clock(self: *PPU, texture_data: [*]u8) !void {
                         and sprite.attribute.spriteZero and self.cycle != 255;
 
                         self.status.SpriteZeroHit = self.status.SpriteZeroHit //
-                        and ((color_out_bg & 0b11) | (color_out_sprite & 0b11)) != 0;
+                        and ((color_out_bg & 0b11) | (pixel & 0b11)) != 0;
                     }
                     if (color_out_sprite & 0b11 == 0) {
-                        continue;
+                        color_out_sprite = pixel;
+                        sprite_behind_bg = sprite.attribute.behindBG;
                     }
-                    break;
                 }
             }
         }
@@ -328,7 +325,7 @@ inline fn spriteEvaluate(self: *PPU) void {
             self.draw_list[tail].shifter_hi = self.internalRead(addr + 8);
             self.draw_list[tail].attribute.spriteZero = i == 0;
             self.draw_list[tail].attribute.drawing = false;
-            self.draw_list[tail].x = self.oam[i + 3];
+            self.draw_list[tail].x = self.oam[i + 3] + 1;
             if (self.draw_list[tail].attribute.flip_horizontal) {
                 self.draw_list[tail].shifter_lo = @bitReverse(self.draw_list[tail].shifter_lo);
                 self.draw_list[tail].shifter_hi = @bitReverse(self.draw_list[tail].shifter_hi);

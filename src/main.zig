@@ -79,10 +79,9 @@ pub fn main() !void {
                         else => {},
                     }
                 },
-                else => {
-                    nes.handleKey(event);
-                },
+                else => {},
             }
+            nes.handleKey(event);
         }
 
         if (run) {
