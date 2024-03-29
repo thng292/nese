@@ -80,11 +80,10 @@ pub const Header = packed struct(u128) {
 
 pub const ROM = struct {
     header: Header,
-    trainer: []u8,
+    trainer: ?[]u8,
     PRG_RomBanks: []u8,
     CHR_RomBanks: []u8,
-    misc: []u8,
-    cartRam: []u8,
+    misc: ?[]u8,
     allocator: std.mem.Allocator,
 
     pub const romError = error{
@@ -95,16 +94,12 @@ pub const ROM = struct {
     pub fn readFromFile(file: std.fs.File, allocator: std.mem.Allocator) !ROM {
         var self = ROM{
             .header = std.mem.zeroes(Header),
-            .trainer = &[_]u8{},
-            .PRG_RomBanks = &[_]u8{},
-            .CHR_RomBanks = &[_]u8{},
-            .misc = &[_]u8{},
-            .cartRam = &[_]u8{},
+            .trainer = null,
+            .PRG_RomBanks = undefined,
+            .CHR_RomBanks = undefined,
+            .misc = null,
             .allocator = allocator,
         };
-        errdefer {
-            self.deinit();
-        }
         var buff = std.mem.zeroes([16]u8);
         var read = try file.read(&buff);
         if (read != 16) {
@@ -117,11 +112,16 @@ pub const ROM = struct {
         }
 
         if (self.header.hasTrainer) {
-            self.trainer = try self.allocator.alloc(u8, 512);
-            read = try file.read(self.trainer);
+            self.trainer.? = try self.allocator.alloc(u8, 512);
+            read = try file.read(self.trainer.?);
             if (read != 512) {
                 std.debug.print("{}\n", .{read});
                 return romError.FileCorrupted;
+            }
+        }
+        errdefer {
+            if (self.trainer) |_| {
+                self.allocator.free(self.trainer.?);
             }
         }
 
@@ -130,33 +130,44 @@ pub const ROM = struct {
         if (read != self.header.getPRGSize()) {
             return romError.FileCorrupted;
         }
+        errdefer {
+            self.allocator.free(self.PRG_RomBanks);
+        }
 
         self.CHR_RomBanks = try self.allocator.alloc(u8, self.header.getCHRSize());
         read = try file.read(self.CHR_RomBanks);
         if (read != self.header.getCHRSize()) {
             return romError.FileCorrupted;
         }
+        errdefer {
+            self.allocator.free(self.CHR_RomBanks);
+        }
 
         const miscSize = (try file.getEndPos() - try file.getPos());
         if (miscSize > 0) {
             self.misc = try self.allocator.alloc(u8, miscSize);
-            read = try file.read(self.misc);
+            read = try file.read(self.misc.?);
             if (read != miscSize) {
                 return romError.FileCorrupted;
             }
         }
-
-        if (self.header.PRG_RAM_Size != 0) {
-            self.cartRam = try self.allocator.alloc(u8, 8192);
+        errdefer {
+            if (self.misc) |_| {
+                self.allocator.free(self.misc.?);
+            }
         }
+
         return self;
     }
 
     pub fn deinit(self: *ROM) void {
-        self.allocator.free(self.trainer);
+        if (self.trainer) |_| {
+            self.allocator.free(self.trainer.?);
+        }
         self.allocator.free(self.PRG_RomBanks);
         self.allocator.free(self.CHR_RomBanks);
-        self.allocator.free(self.misc);
-        self.allocator.free(self.cartRam);
+        if (self.misc) |_| {
+            self.allocator.free(self.misc.?);
+        }
     }
 };

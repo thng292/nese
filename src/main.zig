@@ -8,14 +8,15 @@ const base_screen_h = 240;
 const scale = 4;
 
 pub fn main() !void {
-    try sdl.init(sdl.InitFlags.everything);
-    defer sdl.quit();
+    const allocator = std.heap.page_allocator;
 
-    // const out = try std.fs.cwd().openFile("me.txt", .{ .mode = .write_only });
-    // defer out.close();
-    // CPU.outf = out.writer().any();
+    const out = try std.fs.cwd().createFile("me.txt", .{});
+    defer out.close();
 
     // CPU.outf = std.io.getStdErr().writer().any();
+
+    try sdl.init(sdl.InitFlags.everything);
+    defer sdl.quit();
 
     const main_wind = try Window.create(
         "Nese",
@@ -48,7 +49,7 @@ pub fn main() !void {
         return;
     };
     defer testRomFile.close();
-    var nes = Nes.init(std.heap.page_allocator, testRomFile) catch |err| {
+    var nes = Nes.init(allocator, testRomFile) catch |err| {
         sdl.showSimpleMessageBox(.{ .err = true }, "Error", @errorName(err), main_wind.window) catch {};
         return;
     };
@@ -63,7 +64,9 @@ pub fn main() !void {
     var run = true;
     var step = false;
 
+    const frame_deadline = @as(f64, 1000) / 60;
     var start = sdl.getPerformanceCounter();
+    var total_time: f64 = 0;
     while (true) {
         while (sdl.pollEvent(&event)) {
             switch (event.type) {
@@ -76,6 +79,13 @@ pub fn main() !void {
                             run = true;
                         },
                         .o => nes.bus.ppu.printOAM(),
+                        .l => {
+                            if (CPU.log_out.context == CPU.no_log.context) {
+                                CPU.log_out = out.writer().any();
+                            } else {
+                                CPU.log_out = CPU.no_log;
+                            }
+                        },
                         else => {},
                     }
                 },
@@ -84,36 +94,40 @@ pub fn main() !void {
             nes.handleKey(event);
         }
 
-        if (run) {
-            // Run the whole frame at once
-            // Scanline by scanline
-            nes.runFrame(game_screen) catch |err| {
+        if (total_time > frame_deadline) {
+            total_time = 0;
+            if (run) {
+                // Run the whole frame at once
+                nes.runFrame(game_screen) catch |err| {
+                    sdl.showSimpleMessageBox(.{ .err = true }, "Error", @errorName(err), main_wind.window) catch {};
+                    return;
+                };
+            }
+            if (step) {
+                step = false;
+                run = false;
+            }
+
+            main_wind.renderer.copy(game_screen, null, &destiation_rect) catch |err| {
                 sdl.showSimpleMessageBox(.{ .err = true }, "Error", @errorName(err), main_wind.window) catch {};
                 return;
             };
+            main_wind.renderer.present();
         }
-        if (step) {
-            step = false;
-            run = false;
-        }
-
-        main_wind.renderer.copy(game_screen, null, &destiation_rect) catch |err| {
-            sdl.showSimpleMessageBox(.{ .err = true }, "Error", @errorName(err), main_wind.window) catch {};
-            return;
-        };
-        main_wind.renderer.present();
-
         const performance_counter_freq: f64 = @floatFromInt(sdl.getPerformanceFrequency() / 1000);
         const now = sdl.getPerformanceCounter();
         const elapsed: f64 = @floatFromInt(now - start);
         const elapsedMS = elapsed / performance_counter_freq;
+        total_time += elapsedMS;
         start = now;
-        const frame_deadline = @as(f64, 1000) / 60;
-        const delay: i64 = @intFromFloat(@floor(frame_deadline - elapsedMS));
-        if (delay > 0) {
-            const tmp: u64 = @bitCast(delay);
-            sdl.delay(@truncate(tmp));
-        }
+        // sdl.delay(1);
+        // const delay: i64 = @intFromFloat(@floor(frame_deadline - elapsedMS));
+        // if (delay > 0) {
+        //     const tmp: u64 = @bitCast(delay);
+        //     const delay_ms: u32 = @truncate(tmp);
+        //     std.debug.print("Elapsed: {}, delay: {}, total: {}\n", .{ elapsedMS, delay_ms, elapsedMS + @as(f64, @floatFromInt(delay_ms)) });
+        //     sdl.delay(delay_ms);
+        // }
     }
 }
 
@@ -145,3 +159,51 @@ const Window = struct {
         self.renderer.destroy();
     }
 };
+
+test "NES Overall Test" {
+    const allocator = std.testing.allocator;
+    try sdl.init(sdl.InitFlags.everything);
+    defer sdl.quit();
+
+    const main_wind = try Window.create(
+        "Nese",
+        base_screen_w * scale,
+        base_screen_h * scale,
+    );
+    defer main_wind.destroy();
+
+    const destiation_rect = sdl.Rect{
+        .x = 0,
+        .y = 0,
+        .h = base_screen_h * scale,
+        .w = base_screen_w * scale,
+    };
+    const game_screen = try main_wind.renderer.createTexture(
+        .rgba8888,
+        .streaming,
+        base_screen_w,
+        base_screen_h,
+    );
+    defer game_screen.destroy();
+
+    const testRomFile = try std.fs.cwd().openFile("test-rom/donkey kong.nes", .{});
+    defer testRomFile.close();
+    var nes = try Nes.init(allocator, testRomFile);
+    defer nes.deinit();
+    try nes.startup();
+
+    var event: sdl.Event = undefined;
+    for (0..10000) |_| {
+        while (sdl.pollEvent(&event)) {
+            switch (event.type) {
+                .quit => std.os.exit(0),
+                else => {},
+            }
+        }
+
+        try nes.runFrame(game_screen);
+
+        try main_wind.renderer.copy(game_screen, null, &destiation_rect);
+        main_wind.renderer.present();
+    }
+}

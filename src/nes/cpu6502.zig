@@ -3,7 +3,8 @@ const Bus = @import("bus.zig").Bus;
 
 const log_full = true;
 
-pub var outf: std.io.AnyWriter = std.io.null_writer.any();
+pub const no_log = std.io.null_writer.any();
+pub var log_out: std.io.AnyWriter = no_log;
 const CPU = @This();
 bus: *Bus,
 a: u8 = 0,
@@ -256,7 +257,7 @@ fn logDbg(self: *CPU, instruction_name: []const u8, addr_mode: u8, am_res: AMRes
     //     return;
     // }
     if (comptime log_full) {
-        std.fmt.format(outf, "{X:0>4} {s} {s:16} r:{X:0>2} a:{X:0>4},A:{X:0>2} X:{X:0>2} Y:{X:0>2} SP:{X:0>2} F:{X:0>2},PPU:{:3},{:3},CYC:{}\n", .{
+        std.fmt.format(log_out, "{X:0>4} {s} {s:16} r:{X:0>2} a:{X:0>4},A:{X:0>2} X:{X:0>2} Y:{X:0>2} SP:{X:0>2} F:{X:0>2},PPU:{:3},{:3},CYC:{}\n", .{
             self.pc,
             instruction_name,
             @tagName(@as(enum_tag, (@enumFromInt(addr_mode)))),
@@ -272,7 +273,7 @@ fn logDbg(self: *CPU, instruction_name: []const u8, addr_mode: u8, am_res: AMRes
             self.cycle_count,
         }) catch {};
     } else {
-        std.fmt.format(outf, "{s}\n", .{instruction_name}) catch {};
+        std.fmt.format(log_out, "{s}\n", .{instruction_name}) catch {};
     }
 }
 
@@ -980,75 +981,4 @@ pub fn step(self: *CPU) !void {
     }
     self.cycle_count += self.wait_cycle;
     self.wait_cycle -= 1;
-}
-
-pub fn exec(self: *CPU, end_after_: u16) !void {
-    var end_after = end_after_;
-    while (true) {
-        if (end_after != 0) {
-            end_after -= 1;
-            if (end_after == 0) {
-                break;
-            }
-        }
-        try self.step();
-    }
-}
-
-pub const simple_prog = struct {
-    const Self = @This();
-    const lower_bound = 0xC000;
-    data: []const u8,
-
-    pub fn inRange(self: *Self, address: u16) bool {
-        _ = self;
-        return lower_bound <= address;
-    }
-
-    pub fn read(self: *Self, address: u16) u8 {
-        if (address - lower_bound < self.data.len) {
-            return self.data[address - lower_bound];
-        }
-        return 0;
-    }
-
-    pub fn write(self: *Self, address: u16, data: u8) void {
-        _ = data;
-        _ = address;
-        _ = self;
-    }
-};
-
-pub fn cpu_test_all() !void {
-    const iNes = @import("ines.zig").ROM;
-    const Mapper0 = @import("mapper0.zig");
-    const PPU = @import("ppu2C02.zig");
-    const toMapper = @import("mapper.zig").toMapper;
-    const testRomFile = try std.fs.cwd().openFile("test-rom/nestest.nes", .{});
-    defer testRomFile.close();
-    var test_rom = try iNes.readFromFile(testRomFile, std.heap.page_allocator);
-    defer test_rom.deinit();
-
-    var mapper0 = Mapper0.init(&test_rom);
-    const mapper = toMapper(&mapper0);
-    var ppu = try PPU.init(mapper, &test_rom);
-    var bus = Bus.init(mapper, &ppu);
-
-    var cpu = CPU{
-        .bus = &bus,
-    };
-    cpu.reset();
-
-    const logF = try std.fs.cwd().openFile("me.txt", .{ .mode = .write_only });
-    defer logF.close();
-    const writer = logF.writer();
-    CPU.outf = writer.any();
-
-    cpu.pc = 0xC000;
-    try cpu.exec(0xA000);
-    std.log.warn("0x02 0x03 {x}{x}", .{ bus.read(0x02), bus.read(0x03) });
-}
-
-test "CPU test all" {
-    try cpu_test_all();
 }

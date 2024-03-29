@@ -64,7 +64,7 @@ pub fn runFrame(self: *Nes, game_screen: *sdl.Texture) !void {
             self.bus.ppu.nmiSend = false;
             self.bus.nmiSet = true;
         }
-        self.counter += 1;
+        self.counter +%= 1;
     }
 }
 
