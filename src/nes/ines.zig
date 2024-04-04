@@ -46,7 +46,7 @@ pub const Header = packed struct(u128) {
     micsRom: u8,
     defaultExpandsionDev: u8,
 
-    pub fn getPRGSize(self: *const Header) u32 {
+    pub fn getPRGROMSize(self: *const Header) u32 {
         if (self.version == @as(u2, 2)) {
             var res: u32 = 0;
             res = self.PRG_ROM_SizeMSB;
@@ -54,11 +54,11 @@ pub const Header = packed struct(u128) {
             res |= self.PRG_ROM_Size;
             return res;
         } else {
-            return @as(u32, @intCast(self.PRG_ROM_Size)) * 16 * 1024;
+            return @as(u32, self.PRG_ROM_Size) * 16 * 1024;
         }
     }
 
-    pub fn getCHRSize(self: *const Header) u32 {
+    pub fn getCHRROMSize(self: *const Header) u32 {
         if (self.version == @as(u2, 2)) {
             var res: u32 = 0;
             res = self.CHR_ROM_SizeMSB;
@@ -66,7 +66,7 @@ pub const Header = packed struct(u128) {
             res |= self.CHR_ROM_Size;
             return res;
         } else {
-            return @max(@as(u32, @intCast(self.CHR_ROM_Size)), 1) * 8 * 1024;
+            return @as(u32, self.CHR_ROM_Size) * 8 * 1024;
         }
     }
 
@@ -103,7 +103,7 @@ pub const ROM = struct {
         var buff = std.mem.zeroes([16]u8);
         var read = try file.read(&buff);
         if (read != 16) {
-            std.debug.print("{}\n", .{read});
+            debug(@src());
             return romError.FileCorrupted;
         }
         self.header = @bitCast(buff);
@@ -112,10 +112,10 @@ pub const ROM = struct {
         }
 
         if (self.header.hasTrainer) {
-            self.trainer.? = try self.allocator.alloc(u8, 512);
+            self.trainer = try self.allocator.alloc(u8, 512);
             read = try file.read(self.trainer.?);
             if (read != 512) {
-                std.debug.print("{}\n", .{read});
+                debug(@src());
                 return romError.FileCorrupted;
             }
         }
@@ -125,18 +125,26 @@ pub const ROM = struct {
             }
         }
 
-        self.PRG_RomBanks = try self.allocator.alloc(u8, self.header.getPRGSize());
+        self.PRG_RomBanks = try self.allocator.alloc(u8, self.header.getPRGROMSize());
         read = try file.read(self.PRG_RomBanks);
-        if (read != self.header.getPRGSize()) {
+        if (read != self.header.getPRGROMSize()) {
+            debug(@src());
             return romError.FileCorrupted;
         }
         errdefer {
             self.allocator.free(self.PRG_RomBanks);
         }
 
-        self.CHR_RomBanks = try self.allocator.alloc(u8, self.header.getCHRSize());
-        read = try file.read(self.CHR_RomBanks);
-        if (read != self.header.getCHRSize()) {
+        const CHR_ROM_size = self.header.getCHRROMSize();
+        read = 0;
+        if (CHR_ROM_size == 0) {
+            self.CHR_RomBanks = try self.allocator.alloc(u8, 0x2000);
+        } else {
+            self.CHR_RomBanks = try self.allocator.alloc(u8, CHR_ROM_size);
+            read = try file.read(self.CHR_RomBanks);
+        }
+        if (read != CHR_ROM_size) {
+            debug(@src());
             return romError.FileCorrupted;
         }
         errdefer {
@@ -148,6 +156,7 @@ pub const ROM = struct {
             self.misc = try self.allocator.alloc(u8, miscSize);
             read = try file.read(self.misc.?);
             if (read != miscSize) {
+                debug(@src());
                 return romError.FileCorrupted;
             }
         }
@@ -171,3 +180,9 @@ pub const ROM = struct {
         }
     }
 };
+
+inline fn debug(src: std.builtin.SourceLocation) void {
+    if (comptime @import("builtin").mode == .Debug) {
+        std.debug.print("{s}: {}, {}\n", .{ src.file, src.line, src.column });
+    }
+}

@@ -1,14 +1,17 @@
 const std = @import("std");
 const sdl = @import("zsdl");
+
 const Bus = @import("bus.zig").Bus;
 const CPU = @import("cpu6502.zig");
 const Rom = @import("ines.zig").ROM;
 const Ram = @import("ram.zig");
 const Control = @import("control.zig");
-const Mapper0 = @import("mapper0.zig");
 const PPU = @import("ppu2C02.zig");
 const APU = @import("apu2A03.zig");
+
 const Mapper = @import("mapper.zig");
+const Mapper0 = @import("mapper0.zig");
+const Mapper2 = @import("mapper2.zig");
 
 const Nes = @This();
 const dot_per_frame = 341 * 262;
@@ -71,7 +74,7 @@ pub fn runFrame(self: *Nes, game_screen: *sdl.Texture) !void {
 const MapperTag = enum(u8) {
     mapper0,
     // mapper1,
-    // mapper2,
+    mapper2,
     // mapper3,
     // mapper4,
     _,
@@ -79,6 +82,7 @@ const MapperTag = enum(u8) {
 
 const MapperUnion = union(MapperTag) {
     mapper0: Mapper0,
+    mapper2: Mapper2,
 };
 
 const CrateMapperError = error{
@@ -90,6 +94,10 @@ fn createMapper(self: *Nes) !Mapper {
         0 => {
             self.mapperMem = MapperUnion{ .mapper0 = Mapper0.init(&self.rom) };
             return self.mapperMem.mapper0.toMapper();
+        },
+        2 => {
+            self.mapperMem = MapperUnion{ .mapper2 = Mapper2.init(&self.rom) };
+            return self.mapperMem.mapper2.toMapper();
         },
         else => {
             return CrateMapperError.MapperNotSupported;

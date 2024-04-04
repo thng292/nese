@@ -39,6 +39,7 @@ pub fn main() !void {
     std.debug.print("\nRunning {?s}\n", .{rom_name});
     const out = try std.fs.cwd().createFile("log.txt", .{});
     defer out.close();
+    // CPU.log_out = out.writer().any();
 
     try sdl.init(sdl.InitFlags.everything);
     defer sdl.quit();
