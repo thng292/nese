@@ -410,7 +410,7 @@ inline fn SBC(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
         self.status.overflow = 0;
     } else {
         am_res.res = ~am_res.res;
-        const tmp: u16 = @as(u16, self.a) + am_res.res + self.status.carry;
+        const tmp: u16 = @as(u16, self.a) + @as(u16, am_res.res) + @as(u16, self.status.carry);
         const old_accumulator = self.a;
         self.a = @truncate(tmp);
         self.status.carry = if (tmp > 255) 1 else 0;

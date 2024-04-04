@@ -19,7 +19,8 @@ const Mapper = @This();
 context: *void,
 cpu_read_fn: *const fn (context: *void, addr: u16) u8,
 cpu_write_fn: *const fn (context: *void, addr: u16, data: u8) void,
-ppu_decode_fn: *const fn (context: *void, addr: u16) u16,
+ppu_read_fn: *const fn (context: *void, addr: u16) u8,
+ppu_write_fn: *const fn (context: *void, addr: u16, data: u8) void,
 get_mirroring_mode_fn: *const fn (context: *void) MirroringMode,
 get_nmi_scanline_fn: *const fn (context: *void) u16,
 
@@ -31,8 +32,12 @@ pub inline fn cpuWrite(self: *Mapper, addr: u16, data: u8) void {
     return self.cpu_write_fn(self.context, addr, data);
 }
 
-pub inline fn ppuDecode(self: *Mapper, addr: u16) u16 {
-    return self.ppu_decode_fn(self.context, addr);
+pub inline fn ppuRead(self: *Mapper, addr: u16) u8 {
+    return self.ppu_read_fn(self.context, addr);
+}
+
+pub inline fn ppuWrite(self: *Mapper, addr: u16, data: u8) void {
+    return self.ppu_write_fn(self.context, addr, data);
 }
 
 pub inline fn getMirroringMode(self: *Mapper) MirroringMode {
@@ -60,9 +65,14 @@ pub fn toMapper(ptr: anytype) Mapper {
             return tmp.cpuWrite(address, data);
         }
 
-        pub fn ppuDecode(context: *void, address: u16) u16 {
+        pub fn ppuRead(context: *void, address: u16) u8 {
             const tmp: T = @alignCast(@ptrCast(context));
-            return tmp.ppuDecode(address);
+            return tmp.ppuRead(address);
+        }
+
+        pub fn ppuWrite(context: *void, address: u16, data: u8) void {
+            const tmp: T = @alignCast(@ptrCast(context));
+            return tmp.ppuWrite(address, data);
         }
 
         pub fn getMirroringMode(context: *void) MirroringMode {
@@ -80,7 +90,8 @@ pub fn toMapper(ptr: anytype) Mapper {
         .context = @alignCast(@ptrCast(ptr)),
         .cpu_read_fn = anon.cpuRead,
         .cpu_write_fn = anon.cpuWrite,
-        .ppu_decode_fn = anon.ppuDecode,
+        .ppu_read_fn = anon.ppuRead,
+        .ppu_write_fn = anon.ppuWrite,
         .get_mirroring_mode_fn = anon.getMirroringMode,
         .get_nmi_scanline_fn = anon.getNMIScanline,
     };

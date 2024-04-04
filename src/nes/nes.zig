@@ -30,7 +30,7 @@ pub fn startup(self: *Nes) !void {
     self.bus = Bus{
         .mapper = mapper,
         .ram = Ram{},
-        .ppu = try PPU.init(mapper, &self.rom),
+        .ppu = try PPU.init(mapper),
         .control = Control{},
         .apu = APU{},
     };

@@ -4,24 +4,20 @@ const ROM = @import("ines.zig").ROM;
 
 const Self = @This();
 
-prg_rom: []u8,
+rom: *ROM,
 start_addr: u16,
 mirroring: mapperInterface.MirroringMode,
 
 pub fn init(rom: *ROM) Self {
-    var res = std.mem.zeroes(Self);
-    res.start_addr = if (rom.header.PRG_ROM_Size != 1) 0x8000 else 0xC000;
-    res.prg_rom = rom.PRG_RomBanks;
-    res.mirroring = if (rom.header.mirroring) .Vertical else .Horizontal;
-    return res;
-}
-
-pub fn mapperHandle(self: *Self, addr: u16) bool {
-    return self.start_addr <= addr;
+    return .{
+        .start_addr = if (rom.header.PRG_ROM_Size != 1) 0x8000 else 0xC000,
+        .rom = rom,
+        .mirroring = if (rom.header.mirroring) .Vertical else .Horizontal,
+    };
 }
 
 pub fn cpuRead(self: *Self, addr: u16) u8 {
-    return self.prg_rom[addr - self.start_addr];
+    return self.rom.PRG_RomBanks[addr - self.start_addr];
 }
 
 pub fn cpuWrite(self: *Self, addr: u16, data: u8) void {
@@ -30,9 +26,14 @@ pub fn cpuWrite(self: *Self, addr: u16, data: u8) void {
     _ = self;
 }
 
-pub fn ppuDecode(self: *Self, addr: u16) u16 {
+pub fn ppuRead(self: *Self, addr: u16) u8 {
+    return self.rom.CHR_RomBanks[addr];
+}
+
+pub fn ppuWrite(self: *Self, addr: u16, data: u8) void {
+    _ = data;
+    _ = addr;
     _ = self;
-    return addr;
 }
 
 pub fn getMirroringMode(self: *Self) mapperInterface.MirroringMode {

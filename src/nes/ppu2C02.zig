@@ -12,7 +12,6 @@ mask: PPUMASK = std.mem.zeroes(PPUMASK),
 status: PPUSTATUS = std.mem.zeroes(PPUSTATUS),
 nmiSend: bool = false,
 
-CHR_ROM: []u8,
 nametable: [2048]u8 = undefined,
 oam: [256]u8 = undefined,
 draw_list: [8]ToBeDrawn = undefined,
@@ -41,10 +40,9 @@ bg_next_title_lsb: u8 = 0,
 bg_next_title_msb: u8 = 0,
 bg_next_title_attrib: u8 = 0,
 
-pub fn init(mapper: Mapper, rom: *Rom) !PPU {
+pub fn init(mapper: Mapper) !PPU {
     return PPU{
         .mapper = mapper,
-        .CHR_ROM = rom.CHR_RomBanks,
     };
 }
 
@@ -386,6 +384,7 @@ pub fn write(self: *PPU, addr: u16, data: u8) void {
                 // if (data <= 239) {
                 self.treg.coarse_x = @truncate(data >> 3);
                 self.fine_x = @truncate(data & 0b111);
+                // std.debug.print("coarse_x, fine_x: {}, {}\n", .{ self.treg.coarse_x, self.fine_x });
                 // }
             }
             self.addr_latch = !self.addr_latch;
@@ -435,7 +434,7 @@ fn resolveNametableAddr(self: *PPU, addr: u16) u16 {
 
 fn internalRead(self: *PPU, addr: u16) u8 {
     return switch (addr) {
-        0x0000...0x1FFF => self.CHR_ROM[self.mapper.ppuDecode(addr)],
+        0x0000...0x1FFF => self.mapper.ppuRead(addr),
         0x2000...0x2FFF => self.nametable[self.resolveNametableAddr(addr)],
         0x3000...0x3EFF => self.nametable[self.resolveNametableAddr(addr - 0x3000 + 0x2000)],
         0x3F00...0x3F0F => self.imagePalette[addr - 0x3F00],
@@ -455,7 +454,7 @@ fn internalRead(self: *PPU, addr: u16) u8 {
 
 fn internalWrite(self: *PPU, addr: u16, data: u8) void {
     return switch (addr) {
-        0x0000...0x1FFF => self.CHR_ROM[self.mapper.ppuDecode(addr)] = data,
+        0x0000...0x1FFF => self.mapper.ppuWrite(addr, data),
         0x2000...0x2FFF => self.nametable[self.resolveNametableAddr(addr)] = data,
         0x3000...0x3EFF => self.nametable[self.resolveNametableAddr(addr - 0x3000 + 0x2000)] = data,
         0x3F00...0x3F0F => {

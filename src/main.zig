@@ -6,20 +6,62 @@ const CPU = @import("nes/cpu6502.zig");
 const base_screen_w = 256;
 const base_screen_h = 240;
 const scale = 4;
+var count: u64 = 0;
+
+fn audio_callback(
+    userdata: ?*anyopaque,
+    stream: [*c]u8,
+    len: c_int,
+) callconv(.C) void {
+    _ = userdata;
+    var i: usize = 0;
+    var u64_stream: [*c]u64 = @alignCast(@ptrCast(stream));
+    const new_len = @divTrunc(len, @sizeOf(u64));
+    while (i < new_len) : (i += 1) {
+        u64_stream[i] = count % 255;
+        count +%= 1;
+    }
+    // std.debug.print("len: {}\n", .{len});
+}
+
+extern fn SDL_GetError() ?[*:0]const u8;
 
 pub fn main() !void {
     const allocator = std.heap.page_allocator;
-
-    const out = try std.fs.cwd().createFile("me.txt", .{});
+    var args_it = try std.process.argsWithAllocator(allocator);
+    defer args_it.deinit();
+    var rom_name: ?[:0]const u8 = null;
+    // Skip first args
+    _ = args_it.next();
+    if (args_it.next()) |arg| {
+        rom_name = arg;
+    }
+    std.debug.print("\nRunning {?s}\n", .{rom_name});
+    const out = try std.fs.cwd().createFile("log.txt", .{});
     defer out.close();
-
-    // CPU.outf = std.io.getStdErr().writer().any();
 
     try sdl.init(sdl.InitFlags.everything);
     defer sdl.quit();
 
+    const audio_spec = sdl.AudioSpec{
+        .channels = 1,
+        .format = sdl.AUDIO_S16SYS,
+        .freq = 44100,
+        .samples = 1024,
+        .callback = audio_callback,
+    };
+    var out_audio_spec: sdl.AudioSpec = undefined;
+
+    const audio_dev_id = sdl.openAudioDevice(null, false, &audio_spec, &out_audio_spec, 0);
+    // sdl.pauseAudioDevice(audio_dev_id, false);
+    std.debug.print("audio_dev_id: {}, out_audio_spec: {}\n", .{ audio_dev_id, out_audio_spec });
+    if (audio_dev_id == 0) {
+        std.debug.print("{?s}\n", .{SDL_GetError()});
+        return;
+    }
+
     const main_wind = try Window.create(
-        "Nese",
+        rom_name.?,
         base_screen_w * scale,
         base_screen_h * scale,
     );
@@ -37,25 +79,23 @@ pub fn main() !void {
         base_screen_w,
         base_screen_h,
     ) catch |err| {
-        sdl.showSimpleMessageBox(.{ .err = true }, "Error", @errorName(err), main_wind.window) catch {};
+        sdl.showSimpleMessageBox(.{ .err = true }, "Create Texture Error", @errorName(err), main_wind.window) catch {};
         return;
     };
     defer game_screen.destroy();
 
-    const testRomFile = std.fs.cwd().openFile("test-rom/Super_mario_brothers.nes", .{}) catch |err| {
-        // const testRomFile = std.fs.cwd().openFile("test-rom/donkey kong.nes", .{}) catch |err| {
-        // const testRomFile = std.fs.cwd().openFile("test-rom/nestest.nes", .{}) catch |err| {
-        sdl.showSimpleMessageBox(.{ .err = true }, "Error", @errorName(err), main_wind.window) catch {};
+    const testRomFile = std.fs.cwd().openFile(rom_name.?, .{}) catch |err| {
+        sdl.showSimpleMessageBox(.{ .err = true }, "Open File Error", @errorName(err), main_wind.window) catch {};
         return;
     };
     defer testRomFile.close();
     var nes = Nes.init(allocator, testRomFile) catch |err| {
-        sdl.showSimpleMessageBox(.{ .err = true }, "Error", @errorName(err), main_wind.window) catch {};
+        sdl.showSimpleMessageBox(.{ .err = true }, "NES Init Error", @errorName(err), main_wind.window) catch {};
         return;
     };
     defer nes.deinit();
     nes.startup() catch |err| {
-        sdl.showSimpleMessageBox(.{ .err = true }, "Error", @errorName(err), main_wind.window) catch {};
+        sdl.showSimpleMessageBox(.{ .err = true }, "Startup Error", @errorName(err), main_wind.window) catch {};
         return;
     };
     // nes.cpu.pc = 0xc000;
@@ -77,6 +117,7 @@ pub fn main() !void {
                         .i => {
                             step = true;
                             run = true;
+                            std.debug.print("count: {}\n", .{count});
                         },
                         .o => nes.bus.ppu.printOAM(),
                         .l => {
@@ -114,20 +155,13 @@ pub fn main() !void {
             };
             main_wind.renderer.present();
         }
+
         const performance_counter_freq: f64 = @floatFromInt(sdl.getPerformanceFrequency() / 1000);
         const now = sdl.getPerformanceCounter();
         const elapsed: f64 = @floatFromInt(now - start);
         const elapsedMS = elapsed / performance_counter_freq;
         total_time += elapsedMS;
         start = now;
-        // sdl.delay(1);
-        // const delay: i64 = @intFromFloat(@floor(frame_deadline - elapsedMS));
-        // if (delay > 0) {
-        //     const tmp: u64 = @bitCast(delay);
-        //     const delay_ms: u32 = @truncate(tmp);
-        //     std.debug.print("Elapsed: {}, delay: {}, total: {}\n", .{ elapsedMS, delay_ms, elapsedMS + @as(f64, @floatFromInt(delay_ms)) });
-        //     sdl.delay(delay_ms);
-        // }
     }
 }
 
