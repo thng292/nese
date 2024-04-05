@@ -17,9 +17,23 @@ jobs:
         with:
           name: nese-window-x84_64
           path: nese-window-x84_64.7z
-      
+
+      - run: rm -rf ./zig-out
       - run: zig build -Doptimize=ReleaseFast -Dtarget=x86_64-linux
+      - uses: edgarrc/action-7z@v1
+        with:
+          args: 7z a -tzip nese-linux-x84_64.7z ./zig-out/bin
       - uses: actions/upload-artifact@v4
         with:
           name: nese-linux-x86_64
-          path: ./zig-out/bin/nese
+          path: nese-linux-x84_64.7z
+      
+      - run: rm -rf ./zig-out
+      - run: zig build -Doptimize=ReleaseFast -Dtarget=x86_64-macos
+      - uses: edgarrc/action-7z@v1
+        with:
+          args: 7z a -tzip nese-macos-x84_64.7z ./zig-out/bin
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nese-macos-x86_64
+          path: nese-macos-x84_64.7z
