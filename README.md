@@ -6,6 +6,10 @@
 nese [path-to-ines-file]
 ```
 
+## Pre-built binaries
+
+- Go to Action > Build and Upload Artifacts > Artifacts
+
 ## Things that worked
 
 - CPU (No invalid op codes)
@@ -65,3 +69,8 @@ nese [path-to-ines-file]
 ## How to build
 
 This project used zig 0.12.0-dev.2711+f995c1b08
+
+## References
+
+- OLC NES: https://github.com/OneLoneCoder/olcNES
+- NesDev wiki: https://www.nesdev.org
