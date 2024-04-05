@@ -38,27 +38,11 @@ pub const Header = packed struct(u128) {
     __unused15: u8,
 
     pub fn getPRGROMSize(self: *const Header) u32 {
-        if (self.version == @as(u2, 2)) {
-            var res: u32 = 0;
-            res = self.PRG_ROM_SizeMSB;
-            res <<= 8;
-            res |= self.PRG_ROM_Size;
-            return res;
-        } else {
-            return @as(u32, self.PRG_ROM_Size) * 16 * 1024;
-        }
+        return @as(u32, self.PRG_ROM_Size) * 16 * 1024;
     }
 
     pub fn getCHRROMSize(self: *const Header) u32 {
-        if (self.version == @as(u2, 2)) {
-            var res: u32 = 0;
-            res = self.CHR_ROM_SizeMSB;
-            res <<= 8;
-            res |= self.CHR_ROM_Size;
-            return res;
-        } else {
-            return @as(u32, self.CHR_ROM_Size) * 8 * 1024;
-        }
+        return @as(u32, self.CHR_ROM_Size) * 8 * 1024;
     }
 
     pub fn getMapperID(self: *const Header) u8 {
