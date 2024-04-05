@@ -508,7 +508,7 @@ pub fn printNametable1(self: *PPU) !void {
     }
 }
 
-pub fn printOAM(self: *PPU) void {
+pub fn printPPUDebug(self: *PPU) void {
     std.debug.print("\n", .{});
     std.debug.print("Sprite Palette================================\n", .{});
     for (self.spritePalette) |value| {
