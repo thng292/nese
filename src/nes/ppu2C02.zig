@@ -308,7 +308,11 @@ inline fn spriteEvaluate(self: *PPU) void {
                     const offset_real: u8 = @bitCast(15 - offset_top);
                     addr = (title_id + @divTrunc(offset_real, 8)) * 16 + @mod(offset_real, 8);
                 } else {
-                    addr = (title_id + @divTrunc(offset_top, 8)) * 16 + offset_top;
+                    if (offset_top >= 8) {
+                        addr = (title_id + 1) * 16 + offset_top - 8;
+                    } else {
+                        addr = (title_id) * 16 + offset_top;
+                    }
                 }
             } else {
                 addr = title_id * 16 + @as(u16, self.ctrl.SpritePatternTableAddr) * 0x1000;
