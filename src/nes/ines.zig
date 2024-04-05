@@ -20,6 +20,7 @@ pub const Header = packed struct(u128) {
     hasTrainer: bool,
     fourScreenVram: bool,
     mapperNumLo: u4,
+
     // Flag 7
     consoleFam: NESConsoleFamily,
     version: u2,
@@ -27,24 +28,14 @@ pub const Header = packed struct(u128) {
 
     // Flag 8
     PRG_RAM_Size: u8,
-    // Flag 9
-    CHR_ROM_SizeMSB: u4,
-    PRG_ROM_SizeMSB: u4,
-    // Flag 10
-    PRG_EEPROM_Size: u4,
-    PRG_RAM_Size2: u4,
-    // Flag 11
-    CHR_NVRAM_Size: u4,
-    CHR_RAM_Size: u4,
-    // Flag 12
-    _pad1: u6,
-    timingMode: TimingMode,
-    // Flag 13
-    VS_HW_Type: u4,
-    VS_PPU_Type: u4,
-    // Flag 14
-    micsRom: u8,
-    defaultExpandsionDev: u8,
+
+    __unused09: u8,
+    __unused10: u8,
+    __unused11: u8,
+    __unused12: u8,
+    __unused13: u8,
+    __unused14: u8,
+    __unused15: u8,
 
     pub fn getPRGROMSize(self: *const Header) u32 {
         if (self.version == @as(u2, 2)) {
@@ -80,10 +71,9 @@ pub const Header = packed struct(u128) {
 
 pub const ROM = struct {
     header: Header,
-    trainer: ?[]u8,
     PRG_RomBanks: []u8,
+    PRG_RamBanks: []u8,
     CHR_RomBanks: []u8,
-    misc: ?[]u8,
     allocator: std.mem.Allocator,
 
     pub const romError = error{
@@ -94,10 +84,9 @@ pub const ROM = struct {
     pub fn readFromFile(file: std.fs.File, allocator: std.mem.Allocator) !ROM {
         var self = ROM{
             .header = std.mem.zeroes(Header),
-            .trainer = null,
             .PRG_RomBanks = undefined,
+            .PRG_RamBanks = undefined,
             .CHR_RomBanks = undefined,
-            .misc = null,
             .allocator = allocator,
         };
         var buff = std.mem.zeroes([16]u8);
@@ -111,18 +100,9 @@ pub const ROM = struct {
             return romError.FileNotNESRom;
         }
 
-        if (self.header.hasTrainer) {
-            self.trainer = try self.allocator.alloc(u8, 512);
-            read = try file.read(self.trainer.?);
-            if (read != 512) {
-                debug(@src());
-                return romError.FileCorrupted;
-            }
-        }
+        self.PRG_RamBanks = try self.allocator.alloc(u8, self.header.PRG_RAM_Size);
         errdefer {
-            if (self.trainer) |_| {
-                self.allocator.free(self.trainer.?);
-            }
+            self.allocator.free(self.PRG_RamBanks);
         }
 
         self.PRG_RomBanks = try self.allocator.alloc(u8, self.header.getPRGROMSize());
@@ -151,33 +131,13 @@ pub const ROM = struct {
             self.allocator.free(self.CHR_RomBanks);
         }
 
-        const miscSize = (try file.getEndPos() - try file.getPos());
-        if (miscSize > 0) {
-            self.misc = try self.allocator.alloc(u8, miscSize);
-            read = try file.read(self.misc.?);
-            if (read != miscSize) {
-                debug(@src());
-                return romError.FileCorrupted;
-            }
-        }
-        errdefer {
-            if (self.misc) |_| {
-                self.allocator.free(self.misc.?);
-            }
-        }
-
         return self;
     }
 
     pub fn deinit(self: *ROM) void {
-        if (self.trainer) |_| {
-            self.allocator.free(self.trainer.?);
-        }
         self.allocator.free(self.PRG_RomBanks);
+        self.allocator.free(self.PRG_RamBanks);
         self.allocator.free(self.CHR_RomBanks);
-        if (self.misc) |_| {
-            self.allocator.free(self.misc.?);
-        }
     }
 };
 
