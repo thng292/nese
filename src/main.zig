@@ -121,12 +121,12 @@ pub fn main() !void {
                             std.debug.print("count: {}\n", .{count});
                         },
                         .o => nes.bus.ppu.printOAM(),
-                        .l => {
-                            if (CPU.log_out.context == CPU.no_log.context) {
-                                CPU.log_out = out.writer().any();
-                            } else {
-                                CPU.log_out = CPU.no_log;
-                            }
+                        .u => {
+                            // if (CPU.log_out.context == CPU.no_log.context) {
+                            //     CPU.log_out = out.writer().any();
+                            // } else {
+                            //     CPU.log_out = CPU.no_log;
+                            // }
                         },
                         else => {},
                     }

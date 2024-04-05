@@ -18,7 +18,7 @@ pub const ControllerMap = struct {
     }
 
     pub inline fn handleKeyDown(self: *ControllerMap, key: sdl.Keycode) void {
-        var bit: u3 = 0;
+        var bit: u4 = 0xF;
         if (key == self.A) bit = 7;
         if (key == self.B) bit = 6;
         if (key == self.Select) bit = 5;
@@ -28,12 +28,14 @@ pub const ControllerMap = struct {
         if (key == self.Left) bit = 1;
         if (key == self.Right) bit = 0;
 
-        const mask: u8 = 1;
-        self.buffer |= mask << bit;
+        if (bit != 0xF) {
+            const mask: u8 = 1;
+            self.buffer |= mask << @truncate(bit);
+        }
     }
 
     pub inline fn handleKeyUp(self: *ControllerMap, key: sdl.Keycode) void {
-        var bit: u3 = 0;
+        var bit: u4 = 0xF;
         if (key == self.A) bit = 7;
         if (key == self.B) bit = 6;
         if (key == self.Select) bit = 5;
@@ -43,8 +45,10 @@ pub const ControllerMap = struct {
         if (key == self.Left) bit = 1;
         if (key == self.Right) bit = 0;
 
-        const mask: u8 = 1;
-        self.buffer &= 0xFF ^ (mask << bit);
+        if (bit != 0xF) {
+            const mask: u8 = 1;
+            self.buffer &= 0xFF ^ (mask << @truncate(bit));
+        }
     }
 };
 

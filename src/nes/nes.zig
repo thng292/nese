@@ -35,7 +35,18 @@ pub fn startup(self: *Nes) !void {
         .mapper = mapper,
         .ram = Ram{},
         .ppu = try PPU.init(mapper),
-        .control = Control{},
+        .control = Control{
+            .controller2 = .{
+                .Up = sdl.Keycode.up,
+                .Down = sdl.Keycode.down,
+                .Left = sdl.Keycode.left,
+                .Right = sdl.Keycode.right,
+                .A = sdl.Keycode.j,
+                .B = sdl.Keycode.k,
+                .Start = sdl.Keycode.slash,
+                .Select = sdl.Keycode.l,
+            },
+        },
         .apu = APU{},
     };
     self.cpu = CPU{
