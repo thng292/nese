@@ -9,12 +9,17 @@ jobs:
         with:
           version: 0.12.0-dev.2711+f995c1b08
       - uses: actions/checkout@v4
-      - run: zig build -Doptimize=ReleaseFast -Dtarget=x86_64-linux
       - run: zig build -Doptimize=ReleaseFast -Dtarget=x86_64-windows
+      - uses: edgarrc/action-7z@v1
+        with:
+          args: 7z a -tzip nese-window-x84_64.7z ./zig-out/bin
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nese-window-x84_64.7z
+          path: nese-window-x84_64.7z
+      
+      - run: zig build -Doptimize=ReleaseFast -Dtarget=x86_64-linux
       - uses: actions/upload-artifact@v4
         with:
           name: nese-linux-x86_64
-          path: |
-            ./zig-out/bin/nese
-            ./zig-out/bin/nese.exe
-      
+          path: ./zig-out/bin/nese
