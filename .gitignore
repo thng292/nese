@@ -1,8 +1,8 @@
 zig-*
-libs
 !build.zig
 test-rom
 !nestest.nes
 out.txt
 src/ppu.cpp
 out*.txt
+log.txt
