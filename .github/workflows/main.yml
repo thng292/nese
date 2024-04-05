@@ -1,0 +1,17 @@
+name: "Build and Upload Artifacts"
+on:
+  workflow_dispatch:
+jobs:
+  build-and-upload:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: goto-bus-stop/setup-zig@v2
+      - run: zig build -Doptimize=ReleaseFast -Dtarget=x86_64-linux
+      - run: zig build -Doptimize=ReleaseFast -Dtarget=x86_64-windows
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nese-linux-x86_64
+          path: |
+            ./zig-out/bin/nese
+            ./zig-out/bin/nese.exe
+      
