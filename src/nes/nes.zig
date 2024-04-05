@@ -12,6 +12,7 @@ const APU = @import("apu2A03.zig");
 const Mapper = @import("mapper.zig");
 const Mapper0 = @import("mapper0.zig");
 const Mapper2 = @import("mapper2.zig");
+const Mapper3 = @import("mapper3.zig");
 
 const Nes = @This();
 const dot_per_frame = 341 * 262;
@@ -75,7 +76,7 @@ const MapperTag = enum(u8) {
     mapper0,
     // mapper1,
     mapper2,
-    // mapper3,
+    mapper3,
     // mapper4,
     _,
 };
@@ -83,6 +84,7 @@ const MapperTag = enum(u8) {
 const MapperUnion = union(MapperTag) {
     mapper0: Mapper0,
     mapper2: Mapper2,
+    mapper3: Mapper3,
 };
 
 const CrateMapperError = error{
@@ -98,6 +100,10 @@ fn createMapper(self: *Nes) !Mapper {
         2 => {
             self.mapperMem = MapperUnion{ .mapper2 = Mapper2.init(&self.rom) };
             return self.mapperMem.mapper2.toMapper();
+        },
+        3 => {
+            self.mapperMem = MapperUnion{ .mapper3 = Mapper3.init(&self.rom) };
+            return self.mapperMem.mapper3.toMapper();
         },
         else => {
             return CrateMapperError.MapperNotSupported;

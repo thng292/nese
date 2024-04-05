@@ -19,6 +19,9 @@ pub fn init(rom: *ROM) Self {
 }
 
 pub fn cpuRead(self: *Self, addr: u16) u8 {
+    if (addr < 0x8000) {
+        return 0;
+    }
     const index = addr - self.start_addr;
     if (index > 0x3FFF) {
         const short = self.rom.PRG_RomBanks;
@@ -28,8 +31,9 @@ pub fn cpuRead(self: *Self, addr: u16) u8 {
 }
 
 pub fn cpuWrite(self: *Self, addr: u16, data: u8) void {
-    self.bank_select = data;
-    _ = addr;
+    if (0x8000 <= addr) {
+        self.bank_select = data;
+    }
 }
 
 pub fn ppuRead(self: *Self, addr: u16) u8 {
