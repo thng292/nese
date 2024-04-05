@@ -114,19 +114,19 @@ pub fn main() !void {
                 .quit => std.os.exit(0),
                 .keydown => {
                     switch (event.key.keysym.scancode) {
-                        .p => run = !run,
-                        .i => {
+                        .f2 => run = !run,
+                        .f3 => {
                             step = true;
                             run = true;
-                            std.debug.print("count: {}\n", .{count});
+                            // std.debug.print("count: {}\n", .{count});
                         },
-                        .o => nes.bus.ppu.printOAM(),
-                        .u => {
-                            // if (CPU.log_out.context == CPU.no_log.context) {
-                            //     CPU.log_out = out.writer().any();
-                            // } else {
-                            //     CPU.log_out = CPU.no_log;
-                            // }
+                        .f4 => nes.bus.ppu.printOAM(),
+                        .f5 => {
+                            if (CPU.log_out.context == CPU.no_log.context) {
+                                CPU.log_out = out.writer().any();
+                            } else {
+                                CPU.log_out = CPU.no_log;
+                            }
                         },
                         else => {},
                     }
