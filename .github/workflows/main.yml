@@ -12,13 +12,14 @@ jobs:
       - run: zig build -Doptimize=ReleaseFast -Dtarget=x86_64-windows
       - uses: edgarrc/action-7z@v1
         with:
-          args: 7z a -tzip nese-window-x84_64.7z ./zig-out/bin/nese.exe ./zig-out/bin/SDL2.dll ./zig-out/bin/SDL2_ttf.dll
+          args: 7z a -tzip nese-window-x84_64.7z ./zig-out/bin/nese.exe ./zig-out/bin/SDL2.dll
       - uses: actions/upload-artifact@v4
         with:
           name: nese-window-x84_64
           path: nese-window-x84_64.7z
 
       - run: rm -rf ./zig-out
+      - run: sudo apt update && sudo apt-get install libsdl2-dev
       - run: zig build -Doptimize=ReleaseFast -Dtarget=x86_64-linux
       - uses: edgarrc/action-7z@v1
         with:
