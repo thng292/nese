@@ -19,7 +19,7 @@ jobs:
           path: nese-window-x84_64.7z
 
       - run: rm -rf ./zig-out
-      - uses: BrettDong/setup-sdl2-frameworks@main
+      - run: sudo apt update && sudo apt-get install libsdl2-dev
       - run: zig build -Doptimize=ReleaseFast -Dtarget=x86_64-linux
       - uses: edgarrc/action-7z@v1
         with:
