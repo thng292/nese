@@ -12,29 +12,29 @@ jobs:
       - run: zig build -Doptimize=ReleaseFast -Dtarget=x86_64-windows
       - uses: edgarrc/action-7z@v1
         with:
-          args: 7z a -tzip nese-window-x84_64.7z ./zig-out/bin/nese.exe ./zig-out/bin/SDL2.dll
+          args: 7z a nese-window-x84_64.zip ./zig-out/bin/nese.exe ./zig-out/bin/SDL2.dll
       - uses: actions/upload-artifact@v4
         with:
           name: nese-window-x84_64
-          path: nese-window-x84_64.7z
+          path: nese-window-x84_64.zip
 
       - run: rm -rf ./zig-out
       - run: sudo apt update && sudo apt-get install libsdl2-dev
       - run: zig build -Doptimize=ReleaseFast -Dtarget=x86_64-linux
       - uses: edgarrc/action-7z@v1
         with:
-          args: 7z a -tzip nese-linux-x84_64.7z ./zig-out/bin
+          args: 7z a nese-linux-x84_64.zip ./zig-out/bin
       - uses: actions/upload-artifact@v4
         with:
           name: nese-linux-x86_64
-          path: nese-linux-x84_64.7z
+          path: nese-linux-x84_64.zip
       
       - run: rm -rf ./zig-out
       - run: zig build -Doptimize=ReleaseFast -Dtarget=x86_64-macos
       - uses: edgarrc/action-7z@v1
         with:
-          args: 7z a -tzip nese-macos-x84_64.7z ./zig-out/bin
+          args: 7z a nese-macos-x84_64.zip ./zig-out/bin
       - uses: actions/upload-artifact@v4
         with:
           name: nese-macos-x86_64
-          path: nese-macos-x84_64.7z
+          path: nese-macos-x84_64.zip
