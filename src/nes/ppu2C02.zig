@@ -29,7 +29,7 @@ vreg: VRamAddr = std.mem.zeroes(VRamAddr),
 treg: VRamAddr = std.mem.zeroes(VRamAddr),
 fine_x: u3 = 0,
 
-texture_pixel_count: u64 = 0,
+texture_pixel_count: usize = 0,
 
 bg_shifter_pattern_lo: u16 = 0,
 bg_shifter_pattern_hi: u16 = 0,

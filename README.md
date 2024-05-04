@@ -68,7 +68,7 @@ nese [path-to-ines-file]
 
 ## How to build
 
-This project used zig 0.12.0-dev.2711+f995c1b08
+This project used zig 0.12.0
 
 ## References
 

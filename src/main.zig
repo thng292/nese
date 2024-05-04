@@ -6,25 +6,6 @@ const CPU = @import("nes/cpu6502.zig");
 const base_screen_w = 256;
 const base_screen_h = 240;
 const scale = 4;
-var count: u64 = 0;
-
-fn audio_callback(
-    userdata: ?*anyopaque,
-    stream: [*c]u8,
-    len: c_int,
-) callconv(.C) void {
-    _ = userdata;
-    var i: usize = 0;
-    var u64_stream: [*c]u64 = @alignCast(@ptrCast(stream));
-    const new_len = @divTrunc(len, @sizeOf(u64));
-    while (i < new_len) : (i += 1) {
-        u64_stream[i] = count % 255;
-        count +%= 1;
-    }
-    // std.debug.print("len: {}\n", .{len});
-}
-
-extern fn SDL_GetError() ?[*:0]const u8;
 
 pub fn main() !void {
     const allocator = std.heap.page_allocator;
@@ -37,29 +18,13 @@ pub fn main() !void {
         rom_name = arg;
     }
     std.debug.print("\nRunning {?s}\n", .{rom_name});
-    const out = try std.fs.cwd().createFile("log.txt", .{});
+    //     const out = try std.fs.cwd().createFile("log.txt", .{});
+    const out = std.io.getStdOut();
     defer out.close();
     // CPU.log_out = out.writer().any();
 
     try sdl.init(sdl.InitFlags.everything);
     defer sdl.quit();
-
-    const audio_spec = sdl.AudioSpec{
-        .channels = 1,
-        .format = sdl.AUDIO_S16SYS,
-        .freq = 44100,
-        .samples = 1024,
-        .callback = audio_callback,
-    };
-    var out_audio_spec: sdl.AudioSpec = undefined;
-
-    const audio_dev_id = sdl.openAudioDevice(null, false, &audio_spec, &out_audio_spec, 0);
-    // sdl.pauseAudioDevice(audio_dev_id, false);
-    std.debug.print("audio_dev_id: {}, out_audio_spec: {}\n", .{ audio_dev_id, out_audio_spec });
-    if (audio_dev_id == 0) {
-        std.debug.print("{?s}\n", .{SDL_GetError()});
-        return;
-    }
 
     const main_wind = try Window.create(
         rom_name.?,
@@ -111,7 +76,7 @@ pub fn main() !void {
     while (true) {
         while (sdl.pollEvent(&event)) {
             switch (event.type) {
-                .quit => std.os.exit(0),
+                .quit => std.process.exit(0),
                 .keydown => {
                     switch (event.key.keysym.scancode) {
                         .f2 => run = !run,
@@ -231,7 +196,7 @@ test "NES Overall Test" {
     for (0..10000) |_| {
         while (sdl.pollEvent(&event)) {
             switch (event.type) {
-                .quit => std.os.exit(0),
+                .quit => std.process.exit(0),
                 else => {},
             }
         }

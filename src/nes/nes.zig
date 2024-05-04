@@ -22,9 +22,11 @@ cpu: CPU = undefined,
 bus: Bus = undefined,
 mapperMem: MapperUnion = undefined,
 counter: u64 = 0,
+allocator: std.mem.Allocator,
 
 pub inline fn init(allocator: std.mem.Allocator, rom_file: std.fs.File) !Nes {
     return Nes{
+        .allocator = allocator,
         .rom = try Rom.readFromFile(rom_file, allocator),
     };
 }
@@ -47,7 +49,7 @@ pub fn startup(self: *Nes) !void {
                 .Select = sdl.Keycode.l,
             },
         },
-        .apu = APU{},
+        .apu = try APU.init(self.allocator),
     };
     self.cpu = CPU{
         .bus = &self.bus,
@@ -57,6 +59,7 @@ pub fn startup(self: *Nes) !void {
 
 pub fn deinit(self: *Nes) void {
     self.rom.deinit();
+    self.bus.apu.deinit();
 }
 
 pub fn handleKey(self: *Nes, event: sdl.Event) void {
