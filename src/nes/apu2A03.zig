@@ -9,6 +9,7 @@ audio_spec: sdl.AudioSpec = sdl.AudioSpec{
     .samples = 1024,
     .callback = audio_callback,
 },
+audio_dev_id: sdl.AudioDeviceId,
 allocator: std.mem.Allocator,
 buffer: [2][]u8,
 
@@ -48,11 +49,13 @@ pub fn init(allocator: std.mem.Allocator) !APU {
     return APU{
         .allocator = allocator,
         .audio_spec = audio_spec,
+        .audio_dev_id = audio_dev_id,
         .buffer = buffer,
     };
 }
 
 pub fn deinit(self: *APU) void {
+    sdl.pauseAudioDevice(self.audio_dev_id, true);
     self.allocator.free(self.buffer[0]);
     self.allocator.free(self.buffer[1]);
 }
