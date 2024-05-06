@@ -19,25 +19,13 @@ pub fn write(self: *APU, addr: u16, data: u8) void {
     _ = data;
 }
 
-pub fn init(allocator: std.mem.Allocator) !APU {
-    const audio_spec: sdl.AudioSpec = sdl.AudioSpec{
-        .channels = 1,
-        .format = sdl.AUDIO_U8,
-        .freq = 44100,
-        .samples = 1024,
-        .callback = audio_callback,
-    };
-    var out_audio_spec: sdl.AudioSpec = undefined;
-
-    const audio_dev_id = sdl.openAudioDevice(null, false, &audio_spec, &out_audio_spec, 0);
-    sdl.pauseAudioDevice(audio_dev_id, false);
-
-    // std.debug.print("audio_dev_id: {}, out_audio_spec: {}\n", .{ audio_dev_id, out_audio_spec });
-    if (audio_dev_id == 0) {
-        std.debug.print("Failed to init audio: {?s}\n", .{SDL_GetError()});
-    }
-
-    const buffer_size: usize = audio_spec.channels * audio_spec.freq;
+pub fn init(
+    allocator: std.mem.Allocator,
+    audio_dev_id: sdl.AudioDeviceId,
+    audio_spec: sdl.AudioSpec,
+) !APU {
+    const buffer_size: usize = //
+        @as(usize, audio_spec.channels) * @as(usize, @intCast(audio_spec.freq));
     var buffer: [2][]u8 = undefined;
     buffer[0] = try allocator.alloc(u8, buffer_size);
     @memset(buffer[0], 0);
@@ -60,7 +48,7 @@ pub fn deinit(self: *APU) void {
     self.allocator.free(self.buffer[1]);
 }
 
-fn audio_callback(
+pub fn audio_callback(
     userdata: ?*anyopaque,
     stream: [*c]u8,
     len: c_int,
@@ -68,8 +56,6 @@ fn audio_callback(
     _ = userdata;
     var i: usize = 0;
     while (i < len) : (i += 1) {
-        stream[i] = @truncate(i % 255);
+        stream[i] = 0;
     }
 }
-
-extern fn SDL_GetError() ?[*:0]const u8;

@@ -83,11 +83,13 @@ pub fn clock(self: *PPU, texture_data: [*]u8) !void {
                     self.bg_next_title_attrib &= 0b11;
                 },
                 4 => {
-                    const tmp = @as(u16, self.bg_next_title_id) * 16 + @as(u16, self.ctrl.BGPatternTableAddr) * 0x1000;
+                    const tmp = @as(u16, self.bg_next_title_id) * 16 //
+                    + @as(u16, self.ctrl.BGPatternTableAddr) * 0x1000;
                     self.bg_next_title_lsb = self.internalRead(tmp + self.vreg.fine_y);
                 },
                 6 => {
-                    const tmp = @as(u16, self.bg_next_title_id) * 16 + @as(u16, self.ctrl.BGPatternTableAddr) * 0x1000;
+                    const tmp = @as(u16, self.bg_next_title_id) * 16 //
+                    + @as(u16, self.ctrl.BGPatternTableAddr) * 0x1000;
                     self.bg_next_title_msb = self.internalRead(tmp + self.vreg.fine_y + 8);
                 },
                 7 => {
@@ -304,14 +306,18 @@ inline fn spriteEvaluate(self: *PPU) void {
 
             var addr: u16 = 0;
             if (self.ctrl.height16) {
+                addr = if (title_id & 1 != 0) 0x1000 else 0;
                 if (self.draw_list[tail].attribute.flip_vertical) {
-                    const offset_real: u8 = @bitCast(15 - offset_top);
-                    addr = (title_id + @divTrunc(offset_real, 8)) * 16 + @mod(offset_real, 8);
+                    if (offset_top >= 8) {
+                        addr += (title_id) * 16 + 7 - (offset_top - 8);
+                    } else {
+                        addr += (title_id + 1) * 16 + 7 - offset_top;
+                    }
                 } else {
                     if (offset_top >= 8) {
-                        addr = (title_id + 1) * 16 + offset_top - 8;
+                        addr += (title_id + 1) * 16 + offset_top - 8;
                     } else {
-                        addr = (title_id) * 16 + offset_top;
+                        addr += (title_id) * 16 + offset_top;
                     }
                 }
             } else {
@@ -508,24 +514,44 @@ pub fn printNametable1(self: *PPU) !void {
     }
 }
 
+fn printStruct(struc: anytype) void {
+    std.debug.print("{{\n", .{});
+    inline for (std.meta.fields(@TypeOf(struc))) |f| {
+        std.debug.print("\t" ++ f.name ++ ": {}\n", .{@field(struc, f.name)});
+    }
+    std.debug.print("}}\n", .{});
+}
+
+fn printColor(value: u8, color: sdl.Color) void {
+    std.debug.print("{X:0>2}: #{X:0>2}{X:0>2}{X:0>2}\n", .{ value, color.r, color.g, color.b });
+}
+
 pub fn printPPUDebug(self: *PPU) void {
     std.debug.print("\n", .{});
     std.debug.print("Sprite Palette================================\n", .{});
     for (self.spritePalette) |value| {
-        std.debug.print("{X:0>2}, {}\n", .{ value, colors[value] });
+        printColor(value, colors[value]);
     }
+
     std.debug.print("BG Palette====================================\n", .{});
     for (self.imagePalette) |value| {
-        std.debug.print("{X:0>2}, {}\n", .{ value, colors[value] });
+        printColor(value, colors[value]);
     }
+
     std.debug.print("State========================================\n", .{});
-    std.debug.print("CTRL: {}\n", .{self.ctrl});
-    std.debug.print("MASK: {}\n", .{self.mask});
-    std.debug.print("STATUS: {}\n", .{self.status});
+    std.debug.print("CTRL:\n", .{});
+    printStruct(self.ctrl);
+
+    std.debug.print("MASK:\n", .{});
+    printStruct(self.mask);
+
+    std.debug.print("STATUS:\n", .{});
+    printStruct(self.status);
+
     std.debug.print("OAM==========================================\n", .{});
     var i: u16 = 0;
     while (i < 256) : (i += 4) {
-        std.debug.print("{{x: {: >3}, y: {: >3}, id: {X:0>2}, attr: {X:0>2}}}\n", .{
+        std.debug.print("{{x: {: >3}, y: {: >3}, id: {X:0>2}, attr: {b:0>8}}}\n", .{
             .x = self.oam[i + 3],
             .y = self.oam[i + 0],
             .id = self.oam[i + 1],

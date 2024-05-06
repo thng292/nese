@@ -2,6 +2,7 @@ const std = @import("std");
 const sdl = @import("zsdl");
 const Nes = @import("nes/nes.zig");
 const CPU = @import("nes/cpu6502.zig");
+const APU = @import("nes/apu2A03.zig");
 
 const base_screen_w = 256;
 const base_screen_h = 240;
@@ -17,11 +18,11 @@ pub fn main() !void {
     if (args_it.next()) |arg| {
         rom_name = arg;
     }
+
     std.debug.print("\nRunning {?s}\n", .{rom_name});
-    //     const out = try std.fs.cwd().createFile("log.txt", .{});
+    // const out = try std.fs.cwd().createFile("log.txt", .{});
     const out = std.io.getStdOut();
     defer out.close();
-    // CPU.log_out = out.writer().any();
 
     try sdl.init(sdl.InitFlags.everything);
     defer sdl.quit();
@@ -32,6 +33,25 @@ pub fn main() !void {
         base_screen_h * scale,
     );
     defer main_wind.destroy();
+
+    const audio_spec: sdl.AudioSpec = sdl.AudioSpec{
+        .channels = 1,
+        .format = sdl.AUDIO_S8,
+        .freq = 44100,
+        .samples = 1024,
+        .callback = APU.audio_callback,
+    };
+    var out_audio_spec: sdl.AudioSpec = undefined;
+
+    const audio_dev_id = sdl.openAudioDevice(null, false, &audio_spec, &out_audio_spec, 0);
+    sdl.pauseAudioDevice(audio_dev_id, false);
+
+    if (audio_dev_id == 0) {
+        std.debug.print("Failed to init audio: {?s}\n", .{SDL_GetError()});
+    }
+
+    var apu = try APU.init(std.heap.page_allocator, audio_dev_id, audio_spec);
+    defer apu.deinit();
 
     const destiation_rect = sdl.Rect{
         .x = 0,
@@ -60,7 +80,7 @@ pub fn main() !void {
         return;
     };
     defer nes.deinit();
-    nes.startup() catch |err| {
+    nes.startup(apu) catch |err| {
         sdl.showSimpleMessageBox(.{ .err = true }, "Startup Error", @errorName(err), main_wind.window) catch {};
         return;
     };
@@ -159,6 +179,8 @@ const Window = struct {
         self.renderer.destroy();
     }
 };
+
+extern fn SDL_GetError() ?[*:0]const u8;
 
 test "NES Overall Test" {
     const allocator = std.testing.allocator;
