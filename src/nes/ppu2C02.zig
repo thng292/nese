@@ -11,6 +11,7 @@ ctrl: PPUCTRL = std.mem.zeroes(PPUCTRL),
 mask: PPUMASK = std.mem.zeroes(PPUMASK),
 status: PPUSTATUS = std.mem.zeroes(PPUSTATUS),
 nmiSend: bool = false,
+odd_frame: bool = false,
 
 nametable: [2048]u8 = undefined,
 oam: [256]u8 = undefined,
@@ -49,9 +50,12 @@ pub fn init(mapper: Mapper) !PPU {
 pub fn clock(self: *PPU, texture_data: [*]u8) !void {
     if (self.scanline >= -1 and self.scanline < 240) {
         if (self.scanline == 0 and self.cycle == 0) {
-            self.cycle = 1;
             self.mirroring = self.mapper.getMirroringMode();
             self.texture_pixel_count = 0;
+            if (self.odd_frame) {
+                self.cycle = 1;
+            }
+            self.odd_frame = !self.odd_frame;
         }
 
         if (self.scanline == -1 and self.cycle == 1) {
@@ -153,11 +157,11 @@ pub fn clock(self: *PPU, texture_data: [*]u8) !void {
         color_out_bg = pixel;
     }
 
-    if (self.cycle == 0) {
+    if (self.cycle == 257 and self.scanline >= 0) {
         self.spriteEvaluate();
     }
 
-    if (self.mask.ShowSprite) {
+    if (self.mask.ShowSprite and self.cycle < 257) blk: {
         for (&self.draw_list) |*sprite| {
             if (sprite.x != 0) {
                 sprite.x -= 1;
@@ -168,31 +172,35 @@ pub fn clock(self: *PPU, texture_data: [*]u8) !void {
                 sprite.attribute.drawing = !sprite.attribute.drawing;
             }
         }
-        if (self.mask.ShowSpriteInLM or self.cycle > 8) {
-            for (&self.draw_list) |*sprite| {
-                if (sprite.attribute.drawing) {
-                    var pixel: u8 = sprite.attribute.palette;
-                    pixel += 4;
-                    pixel <<= 2;
-                    const lo = sprite.shifter_lo >> 7;
-                    const hi = (sprite.shifter_hi >> 7) << 1;
-                    pixel |= lo;
-                    pixel |= hi;
-                    sprite.shifter_hi <<= 1;
-                    sprite.shifter_lo <<= 1;
-                    // Sprite 0 hit
-                    if (self.status.SpriteZeroHit == false) {
-                        self.status.SpriteZeroHit = hi != 0 and lo != 0 //
-                        and sprite.attribute.spriteZero and self.cycle != 255;
+        if (!self.mask.ShowSpriteInLM and self.cycle <= 8) {
+            break :blk;
+        }
+        for (&self.draw_list) |*sprite| {
+            if (!sprite.attribute.drawing) {
+                continue;
+            }
+            var pixel: u8 = sprite.attribute.palette;
+            pixel += 4;
+            pixel <<= 2;
+            const lo = sprite.shifter_lo >> 7;
+            const hi = (sprite.shifter_hi >> 7) << 1;
+            pixel |= lo;
+            pixel |= hi;
+            sprite.shifter_hi <<= 1;
+            sprite.shifter_lo <<= 1;
+            // Sprite 0 hit
+            if (self.status.SpriteZeroHit == false) {
+                self.status.SpriteZeroHit = sprite.attribute.spriteZero //
+                and self.cycle != 255 //
+                and (color_out_bg & pixel & 0b11) != 0;
 
-                        self.status.SpriteZeroHit = self.status.SpriteZeroHit //
-                        and ((color_out_bg & 0b11) | (pixel & 0b11)) != 0;
-                    }
-                    if (color_out_sprite & 0b11 == 0) {
-                        color_out_sprite = pixel;
-                        sprite_behind_bg = sprite.attribute.behindBG;
-                    }
-                }
+                // if (self.status.SpriteZeroHit) {
+                //     std.debug.print("Sprite Zero Hitted\n", .{});
+                // }
+            }
+            if (color_out_sprite & 0b11 == 0) {
+                color_out_sprite = pixel;
+                sprite_behind_bg = sprite.attribute.behindBG;
             }
         }
     }
@@ -293,54 +301,56 @@ inline fn spriteEvaluate(self: *PPU) void {
         .attribute = SpriteAttribute{},
     });
     while (i < 256 and tail < 9) : (i += 4) {
-        const difference = self.scanline - self.oam[i] - 1;
-        if (0 <= difference and difference < spriteHeight) {
-            if (tail == 8) {
-                self.status.SpriteOverflow = true;
-                break;
-            }
-            const offset_top_: i8 = @truncate(difference);
-            const offset_top: u8 = @bitCast(offset_top_);
-            const title_id: u16 = self.oam[i + 1];
-            self.draw_list[tail].attribute = @bitCast(self.oam[i + 2]);
+        const difference = self.scanline - self.oam[i];
+        if (0 > difference or spriteHeight <= difference) {
+            continue;
+        }
+        if (tail == 8) {
+            self.status.SpriteOverflow = true;
+            break;
+        }
+        const offset_top_: i8 = @truncate(difference);
+        const offset_top: u8 = @bitCast(offset_top_);
+        const title_id: u16 = self.oam[i + 1];
+        const currentSprite = &self.draw_list[tail];
+        currentSprite.attribute = @bitCast(self.oam[i + 2]);
 
-            var addr: u16 = 0;
-            if (self.ctrl.height16) {
-                addr = if (title_id & 1 != 0) 0x1000 else 0;
-                if (self.draw_list[tail].attribute.flip_vertical) {
-                    if (offset_top >= 8) {
-                        addr += (title_id) * 16 + 7 - (offset_top - 8);
-                    } else {
-                        addr += (title_id + 1) * 16 + 7 - offset_top;
-                    }
+        var addr: u16 = 0;
+        if (self.ctrl.height16) {
+            addr = if (title_id & 1 != 0) 0x1000 else 0;
+            if (currentSprite.attribute.flip_vertical) {
+                if (offset_top >= 8) {
+                    addr += (title_id) * 16 + 7 - (offset_top - 8);
                 } else {
-                    if (offset_top >= 8) {
-                        addr += (title_id + 1) * 16 + offset_top - 8;
-                    } else {
-                        addr += (title_id) * 16 + offset_top;
-                    }
+                    addr += (title_id + 1) * 16 + 7 - offset_top;
                 }
             } else {
-                addr = title_id * 16 + @as(u16, self.ctrl.SpritePatternTableAddr) * 0x1000;
-                if (self.draw_list[tail].attribute.flip_vertical) {
-                    addr += 7 - offset_top;
+                if (offset_top >= 8) {
+                    addr += (title_id + 1) * 16 + offset_top - 8;
                 } else {
-                    addr += offset_top;
+                    addr += (title_id) * 16 + offset_top;
                 }
             }
-
-            self.draw_list[tail].shifter_lo = self.internalRead(addr);
-            self.draw_list[tail].shifter_hi = self.internalRead(addr + 8);
-            self.draw_list[tail].attribute.spriteZero = i == 0;
-            self.draw_list[tail].attribute.drawing = false;
-            self.draw_list[tail].x = self.oam[i + 3] + 1;
-            if (self.draw_list[tail].attribute.flip_horizontal) {
-                self.draw_list[tail].shifter_lo = @bitReverse(self.draw_list[tail].shifter_lo);
-                self.draw_list[tail].shifter_hi = @bitReverse(self.draw_list[tail].shifter_hi);
+        } else {
+            addr = title_id * 16 + @as(u16, self.ctrl.SpritePatternTableAddr) * 0x1000;
+            if (currentSprite.attribute.flip_vertical) {
+                addr += 7 - offset_top;
+            } else {
+                addr += offset_top;
             }
-
-            tail += 1;
         }
+
+        currentSprite.shifter_lo = self.internalRead(addr);
+        currentSprite.shifter_hi = self.internalRead(addr + 8);
+        currentSprite.attribute.spriteZero = i == 0;
+        currentSprite.attribute.drawing = false;
+        currentSprite.x = self.oam[i + 3] + 1;
+        if (currentSprite.attribute.flip_horizontal) {
+            currentSprite.shifter_lo = @bitReverse(currentSprite.shifter_lo);
+            currentSprite.shifter_hi = @bitReverse(currentSprite.shifter_hi);
+        }
+
+        tail += 1;
     }
 }
 
