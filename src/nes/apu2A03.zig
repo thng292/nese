@@ -24,6 +24,7 @@ pub fn init(
     audio_dev_id: sdl.AudioDeviceId,
     audio_spec: sdl.AudioSpec,
 ) !APU {
+    // sdl.pauseAudioDevice(audio_dev_id, false);
     const buffer_size: usize = //
         @as(usize, audio_spec.channels) * @as(usize, @intCast(audio_spec.freq));
     var buffer: [2][]u8 = undefined;

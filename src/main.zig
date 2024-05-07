@@ -44,7 +44,6 @@ pub fn main() !void {
     var out_audio_spec: sdl.AudioSpec = undefined;
 
     const audio_dev_id = sdl.openAudioDevice(null, false, &audio_spec, &out_audio_spec, 0);
-    sdl.pauseAudioDevice(audio_dev_id, false);
 
     if (audio_dev_id == 0) {
         std.debug.print("Failed to init audio: {?s}\n", .{SDL_GetError()});
