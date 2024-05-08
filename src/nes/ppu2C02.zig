@@ -164,7 +164,7 @@ pub fn clock(self: *PPU, texture_data: [*]u8) !void {
     if (self.mask.ShowSprite and self.cycle < 257) blk: {
         for (&self.draw_list) |*sprite| {
             if (sprite.x != 0) {
-                sprite.x -= 1;
+                sprite.x -%= 1;
             } else {
                 if (sprite.attribute.drawing == false) {
                     sprite.x = 8;
@@ -344,7 +344,7 @@ inline fn spriteEvaluate(self: *PPU) void {
         currentSprite.shifter_hi = self.internalRead(addr + 8);
         currentSprite.attribute.spriteZero = i == 0;
         currentSprite.attribute.drawing = false;
-        currentSprite.x = self.oam[i + 3] + 1;
+        currentSprite.x = self.oam[i + 3] +% 1;
         if (currentSprite.attribute.flip_horizontal) {
             currentSprite.shifter_lo = @bitReverse(currentSprite.shifter_lo);
             currentSprite.shifter_hi = @bitReverse(currentSprite.shifter_hi);

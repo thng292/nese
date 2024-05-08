@@ -378,7 +378,7 @@ inline fn CMP(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
     const tmp = @as(i16, @intCast(self.a)) - am_res.res;
     self.status.zero = if ((tmp & 0xFF) == 0) 1 else 0;
     self.status.carry = if (self.a >= am_res.res) 1 else 0;
-    self.status.negative = if (tmp >> 7 != 0) 1 else 0;
+    self.status.negative = if (tmp & 0x80 != 0) 1 else 0;
     const instruction_cycle = [8]u8{ 6, 3, 2, 4, 5, 4, 4, 4 };
     return instruction_cycle[addr_mode];
 }
@@ -607,7 +607,7 @@ inline fn CPY(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
     const tmp = @as(i16, @intCast(self.y)) - am_res.res;
     self.status.zero = if ((tmp & 0xFF) == 0) 1 else 0;
     self.status.carry = if (self.y >= am_res.res) 1 else 0;
-    self.status.negative = if (tmp >> 7 != 0) 1 else 0;
+    self.status.negative = if (tmp & 0x80 != 0) 1 else 0;
     const instruction_cycle = [8]u8{ 2, 3, 0, 4, 0, 0, 0, 0 };
     return instruction_cycle[addr_mode];
 }
@@ -620,7 +620,7 @@ inline fn CPX(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
     const tmp = @as(i16, @intCast(self.x)) - am_res.res;
     self.status.zero = if ((tmp & 0xFF) == 0) 1 else 0;
     self.status.carry = if (self.x >= am_res.res) 1 else 0;
-    self.status.negative = if (tmp >> 7 != 0) 1 else 0;
+    self.status.negative = if (tmp & 0x80 != 0) 1 else 0;
     const instruction_cycle = [8]u8{ 2, 3, 0, 4, 0, 0, 0, 0 };
     return instruction_cycle[addr_mode];
 }
@@ -782,7 +782,7 @@ pub fn step(self: *CPU) !void {
             switch (instruction) {
                 0x00 => { // BRK is a 2-byte opcode
                     self.logDbg("BRK", 2, AMRes{}, g3_addr_mode_tag);
-                    self.pc += 1;
+                    self.pc +%= 1;
                     self.status.breakCommand = 1;
                     self.bus.write(self.getStackAddr(0), @bitCast(self.status));
                     const hi: u8 = @truncate(self.pc >> 8);
@@ -980,5 +980,7 @@ pub fn step(self: *CPU) !void {
         else => {},
     }
     self.cycle_count += self.wait_cycle;
-    self.wait_cycle -= 1;
+    if (self.wait_cycle > 0) {
+        self.wait_cycle -= 1;
+    }
 }
