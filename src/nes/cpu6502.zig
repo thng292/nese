@@ -59,20 +59,20 @@ inline fn NMI(self: *CPU) u8 {
     tmp.interruptDisable = 1;
     tmp.reserved = 1;
 
-    self.bus.write(self.getStackAddr(0), @bitCast(tmp));
-    self.sp -%= 1;
-
     self.bus.write(self.getStackAddr(0), @truncate(self.pc >> 8));
     self.sp -%= 1;
 
     self.bus.write(self.getStackAddr(0), @truncate(self.pc));
     self.sp -%= 1;
 
+    self.bus.write(self.getStackAddr(0), @bitCast(tmp));
+    self.sp -%= 1;
+
     var nmi_handler_addr: u16 = self.bus.read(0xFFFA);
     nmi_handler_addr |= @as(u16, @intCast(self.bus.read(0xFFFB))) << 8;
     self.pc = nmi_handler_addr;
     self.logDbg("NMI", 0, AMRes{ .addr = nmi_handler_addr }, g1_addr_mode_tag);
-    return 8;
+    return 7;
 }
 
 inline fn IRQ(self: *CPU) u8 {
