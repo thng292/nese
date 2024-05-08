@@ -58,12 +58,16 @@ inline fn NMI(self: *CPU) u8 {
     tmp.breakCommand = 0;
     tmp.interruptDisable = 1;
     tmp.reserved = 1;
-    self.bus.write(self.getStackAddr(0), @truncate(self.pc >> 8));
-    self.sp -%= 1;
-    self.bus.write(self.getStackAddr(0), @truncate(self.pc));
-    self.sp -%= 1;
+
     self.bus.write(self.getStackAddr(0), @bitCast(tmp));
     self.sp -%= 1;
+
+    self.bus.write(self.getStackAddr(0), @truncate(self.pc >> 8));
+    self.sp -%= 1;
+
+    self.bus.write(self.getStackAddr(0), @truncate(self.pc));
+    self.sp -%= 1;
+
     var nmi_handler_addr: u16 = self.bus.read(0xFFFA);
     nmi_handler_addr |= @as(u16, @intCast(self.bus.read(0xFFFB))) << 8;
     self.pc = nmi_handler_addr;
@@ -783,14 +787,20 @@ pub fn step(self: *CPU) !void {
                 0x00 => { // BRK is a 2-byte opcode
                     self.logDbg("BRK", 2, AMRes{}, g3_addr_mode_tag);
                     self.pc +%= 1;
+
+                    const hi: u8 = @truncate(self.pc >> 8);
+                    self.bus.write(self.getStackAddr(0), hi);
+                    self.sp -%= 1;
+
+                    const lo: u8 = @truncate(self.pc);
+                    self.bus.write(self.getStackAddr(0), lo);
+                    self.sp -%= 1;
+
                     self.status.breakCommand = 1;
                     self.bus.write(self.getStackAddr(0), @bitCast(self.status));
-                    const hi: u8 = @truncate(self.pc >> 8);
-                    self.bus.write(self.getStackAddr(-1), hi);
-                    const lo: u8 = @truncate(self.pc);
-                    self.bus.write(self.getStackAddr(-2), lo);
                     self.status.interruptDisable = 1;
-                    self.sp -%= 3;
+                    self.sp -%= 1;
+
                     self.pc = @as(u16, @intCast(self.bus.read(0xFFFF))) << 8 | self.bus.read(0xFFFE);
                     self.wait_cycle = 7;
                 },
@@ -808,13 +818,18 @@ pub fn step(self: *CPU) !void {
                 },
                 0x40 => { // RTI
                     self.logDbg("RTI", 2, AMRes{}, g3_addr_mode_tag);
+
                     self.sp +%= 1;
                     self.status = @bitCast(self.bus.read(self.getStackAddr(0)));
                     self.status.reserved = 1;
                     self.status.breakCommand = 0;
-                    const pc_lo = self.bus.read(self.getStackAddr(1));
-                    const pc_hi: u16 = self.bus.read(self.getStackAddr(2));
-                    self.sp +%= 2;
+
+                    self.sp +%= 1;
+                    const pc_lo = self.bus.read(self.getStackAddr(0));
+
+                    self.sp +%= 1;
+                    const pc_hi: u16 = self.bus.read(self.getStackAddr(0));
+
                     self.pc = (pc_hi << 8) | pc_lo;
                     self.wait_cycle = 6;
                 },
