@@ -7,7 +7,7 @@
             "request": "launch",
             "program": "${workspaceFolder}/zig-out/bin/nese.exe",
             "args": [
-                "test-rom/contra.nes"
+                "test-rom/Tetris.nes"
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",

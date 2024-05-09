@@ -43,7 +43,13 @@ pub fn main() !void {
     };
     var out_audio_spec: sdl.AudioSpec = undefined;
 
-    const audio_dev_id = sdl.openAudioDevice(null, false, &audio_spec, &out_audio_spec, 0);
+    const audio_dev_id = sdl.openAudioDevice(
+        null,
+        false,
+        &audio_spec,
+        &out_audio_spec,
+        0,
+    );
 
     if (audio_dev_id == 0) {
         std.debug.print("Failed to init audio: {?s}\n", .{SDL_GetError()});
@@ -64,23 +70,43 @@ pub fn main() !void {
         base_screen_w,
         base_screen_h,
     ) catch |err| {
-        sdl.showSimpleMessageBox(.{ .err = true }, "Create Texture Error", @errorName(err), main_wind.window) catch {};
+        sdl.showSimpleMessageBox(
+            .{ .err = true },
+            "Create Texture Error",
+            @errorName(err),
+            main_wind.window,
+        ) catch {};
         return;
     };
     defer game_screen.destroy();
 
     const testRomFile = std.fs.cwd().openFile(rom_name.?, .{}) catch |err| {
-        sdl.showSimpleMessageBox(.{ .err = true }, "Open File Error", @errorName(err), main_wind.window) catch {};
+        sdl.showSimpleMessageBox(
+            .{ .err = true },
+            "Open File Error",
+            @errorName(err),
+            main_wind.window,
+        ) catch {};
         return;
     };
     defer testRomFile.close();
     var nes = Nes.init(allocator, testRomFile) catch |err| {
-        sdl.showSimpleMessageBox(.{ .err = true }, "NES Init Error", @errorName(err), main_wind.window) catch {};
+        sdl.showSimpleMessageBox(
+            .{ .err = true },
+            "NES Init Error",
+            @errorName(err),
+            main_wind.window,
+        ) catch {};
         return;
     };
     defer nes.deinit();
     nes.startup(apu) catch |err| {
-        sdl.showSimpleMessageBox(.{ .err = true }, "Startup Error", @errorName(err), main_wind.window) catch {};
+        sdl.showSimpleMessageBox(
+            .{ .err = true },
+            "Startup Error",
+            @errorName(err),
+            main_wind.window,
+        ) catch {};
         return;
     };
     // nes.cpu.pc = 0xc000;
