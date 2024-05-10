@@ -87,6 +87,12 @@ pub fn runFrame(self: *Nes, game_screen: *sdl.Texture) !void {
     }
 }
 
+pub fn draw_CHR(self: *Nes, game_screen: *sdl.Texture) !void {
+    const data = try game_screen.lock(null);
+    defer game_screen.unlock();
+    self.bus.ppu.draw_chr(data.pixels);
+}
+
 const MapperTag = enum(u8) {
     mapper0,
     mapper1,

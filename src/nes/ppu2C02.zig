@@ -161,11 +161,11 @@ pub fn clock(self: *PPU, texture_data: [*]u8) !void {
         color_out_bg = pixel;
     }
 
-    if (self.cycle == 257 and self.scanline >= 0) {
+    if (self.cycle == 0) {
         self.spriteEvaluate();
     }
 
-    if (self.mask.ShowSprite and self.cycle < 257) blk: {
+    if (self.mask.ShowSprite) blk: {
         for (&self.draw_list) |*sprite| {
             if (sprite.x != 0) {
                 sprite.x -%= 1;
@@ -305,7 +305,7 @@ inline fn spriteEvaluate(self: *PPU) void {
         .attribute = SpriteAttribute{},
     });
     while (i < 256 and tail < 9) : (i += 4) {
-        const difference = self.scanline - self.oam[i];
+        const difference = self.scanline - self.oam[i] - 1;
         if (0 > difference or spriteHeight <= difference) {
             continue;
         }
@@ -322,17 +322,18 @@ inline fn spriteEvaluate(self: *PPU) void {
         var addr: u16 = 0;
         if (self.ctrl.height16) {
             addr = if (title_id & 1 != 0) 0x1000 else 0;
+            const reminder = title_id % 2;
             if (currentSprite.attribute.flip_vertical) {
                 if (offset_top >= 8) {
-                    addr += (title_id) * 16 + 7 - (offset_top - 8);
+                    addr += (title_id - reminder) * 16 + 7 - (offset_top - 8);
                 } else {
-                    addr += (title_id + 1) * 16 + 7 - offset_top;
+                    addr += (title_id - reminder + 1) * 16 + 7 - offset_top;
                 }
             } else {
                 if (offset_top >= 8) {
-                    addr += (title_id + 1) * 16 + offset_top - 8;
+                    addr += (title_id - reminder + 1) * 16 + offset_top - 8;
                 } else {
-                    addr += (title_id) * 16 + offset_top;
+                    addr += (title_id - reminder) * 16 + offset_top;
                 }
             }
         } else {
@@ -574,6 +575,61 @@ pub fn printPPUDebug(self: *PPU) void {
     }
     std.debug.print("OAM==========================================\n", .{});
     self.printNametable1() catch {};
+}
+
+const tmp_color = [_]sdl.Color{
+    .{ .r = 0, .g = 0, .b = 0, .a = 255 },
+    .{ .r = 255, .g = 0, .b = 0, .a = 255 },
+    .{ .r = 0, .g = 255, .b = 0, .a = 255 },
+    .{ .r = 0, .g = 0, .b = 255, .a = 255 },
+};
+
+pub fn draw_chr(self: *PPU, texture_data: [*]u8) void {
+    // Draw first pattern table
+    var x: u16 = 0;
+    var y: u8 = 0;
+    for (0..256) |i| {
+        self.draw_sprite(@truncate(i), @truncate(x), y, texture_data);
+        x += 8;
+        if (x == 128) {
+            x = 0;
+            y += 8;
+        }
+    }
+    x = 128;
+    y = 0;
+    // Draw second pattern table
+    for (256..512) |i| {
+        self.draw_sprite(@truncate(i), @truncate(x), y, texture_data);
+        x += 8;
+        if (x == 256) {
+            x = 128;
+            y += 8;
+        }
+    }
+}
+
+fn draw_sprite(self: *PPU, spriteNum: u16, x: u8, y: u8, texture_data: [*]u8) void {
+    var addr: u16 = spriteNum * 16;
+    var xx: u32 = 0;
+    var yy: u32 = 0;
+    for (0..8) |_| {
+        var lsb = self.mapper.ppuRead(addr);
+        var msb = self.mapper.ppuRead(addr + 8);
+        addr += 1;
+        for (0..8) |_| {
+            const pixel = tmp_color[((msb & 0x80) >> 6) | (lsb & 0x80) >> 7];
+            msb <<= 1;
+            lsb <<= 1;
+            const anchor = (x + xx + (y + yy) * 256) * 4;
+            texture_data[anchor + 3] = pixel.r;
+            texture_data[anchor + 2] = pixel.g;
+            texture_data[anchor + 1] = pixel.b;
+            texture_data[anchor + 0] = pixel.a;
+            xx = (xx + 1) % 8;
+        }
+        yy += 1;
+    }
 }
 
 const ToBeDrawn = struct {

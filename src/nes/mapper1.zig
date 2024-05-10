@@ -37,11 +37,7 @@ pub fn init(rom: *ROM) Self {
 
 pub fn cpuRead(self: *Self, addr: u16) u8 {
     if (addr <= 0x7FFF) {
-        if (addr - 0x6000 < self.rom.PRG_RamBanks.len) {
-            return self.rom.PRG_RamBanks[addr - 0x6000];
-        } else {
-            return 0;
-        }
+        return self.rom.PRG_RamBanks[addr - 0x6000];
     }
 
     if (self.control_reg & 0b1000 != 0) {

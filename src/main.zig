@@ -112,7 +112,12 @@ pub fn main() !void {
     // nes.cpu.pc = 0xc000;
 
     var event: sdl.Event = undefined;
-    var run = true;
+    const Screen = enum {
+        RunningGame,
+        DisplayCHR,
+        Paused,
+    };
+    var screen: Screen = .RunningGame;
     var step = false;
 
     const frame_deadline = @as(f64, 1000) / 60;
@@ -124,10 +129,10 @@ pub fn main() !void {
                 .quit => std.process.exit(0),
                 .keydown => {
                     switch (event.key.keysym.scancode) {
-                        .f2 => run = !run,
+                        .f2 => screen = if (screen == .Paused) .RunningGame else .Paused,
                         .f3 => {
                             step = true;
-                            run = true;
+                            screen = .RunningGame;
                             // std.debug.print("count: {}\n", .{count});
                         },
                         .f4 => nes.bus.ppu.printPPUDebug(),
@@ -138,6 +143,7 @@ pub fn main() !void {
                                 CPU.log_out = CPU.no_log;
                             }
                         },
+                        .f6 => screen = .DisplayCHR,
                         else => {},
                     }
                 },
@@ -148,16 +154,24 @@ pub fn main() !void {
 
         if (total_time > frame_deadline) {
             total_time = 0;
-            if (run) {
-                // Run the whole frame at once
-                nes.runFrame(game_screen) catch |err| {
+            switch (screen) {
+                .RunningGame => nes.runFrame(game_screen) catch |err| {
                     sdl.showSimpleMessageBox(.{ .err = true }, "Error", @errorName(err), main_wind.window) catch {};
                     return;
-                };
+                },
+                .DisplayCHR => {
+                    nes.draw_CHR(game_screen) catch |err| {
+                        sdl.showSimpleMessageBox(.{ .err = true }, "Error", @errorName(err), main_wind.window) catch {};
+                        return;
+                    };
+                    sdl.delay(14);
+                },
+                .Paused => sdl.delay(14),
             }
+
             if (step) {
                 step = false;
-                run = false;
+                screen = .Paused;
             }
 
             main_wind.renderer.copy(game_screen, null, &destiation_rect) catch |err| {
