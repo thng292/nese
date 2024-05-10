@@ -7,7 +7,7 @@ jobs:
     steps:
       - uses: goto-bus-stop/setup-zig@v2
         with:
-          version: 0.12.0-dev.2711+f995c1b08
+          version: 0.12.0
       - uses: actions/checkout@v4
       - run: zig build -Doptimize=ReleaseFast -Dtarget=x86_64-windows
       - uses: edgarrc/action-7z@v1
@@ -28,7 +28,7 @@ jobs:
         with:
           name: nese-linux-x86_64
           path: nese-linux-x84_64.zip
-      
+
       - run: rm -rf ./zig-out
       - run: zig build -Doptimize=ReleaseFast -Dtarget=x86_64-macos
       - uses: edgarrc/action-7z@v1
