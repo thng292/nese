@@ -20,7 +20,8 @@ nese [path-to-ines-file]
 ## Things that not worked
 
 - iNes 2.0
-- Super mario brothers (IDK why)
+- ~~Super mario brothers (IDK why)~~ (CMP set flags fault)
+- Tetris (BG not render while playing)
 - Audio (I got no idea how audio work)
 
 ## Default Control
@@ -63,6 +64,7 @@ nese [path-to-ines-file]
 ## Currently supported mappers
 
 - Mapper 0
+- Mapper 1
 - Mapper 2
 - Mapper 3
 
