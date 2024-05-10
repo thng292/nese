@@ -38,11 +38,11 @@ pub const Header = packed struct(u128) {
     __unused15: u8,
 
     pub fn getPRGROMSize(self: *const Header) u32 {
-        return @as(u32, self.PRG_ROM_Size) * 16 * 1024;
+        return @as(u32, self.PRG_ROM_Size) * BANK_16KB;
     }
 
     pub fn getCHRROMSize(self: *const Header) u32 {
-        return @as(u32, self.CHR_ROM_Size) * 8 * 1024;
+        return @as(u32, self.CHR_ROM_Size) * BANK_8KB;
     }
 
     pub fn getMapperID(self: *const Header) u8 {
@@ -84,7 +84,10 @@ pub const ROM = struct {
             return romError.FileNotNESRom;
         }
 
-        self.PRG_RamBanks = try self.allocator.alloc(u8, self.header.PRG_RAM_Size);
+        self.PRG_RamBanks = try self.allocator.alloc(
+            u8,
+            if (self.header.PRG_RAM_Size != 0) self.header.PRG_RAM_Size * BANK_8KB else BANK_32KB,
+        );
         errdefer {
             self.allocator.free(self.PRG_RamBanks);
         }
@@ -130,3 +133,8 @@ inline fn debug(src: std.builtin.SourceLocation) void {
         std.debug.print("{s}: {}, {}\n", .{ src.file, src.line, src.column });
     }
 }
+
+const BANK_4KB: u32 = 0x1000;
+const BANK_8KB: u32 = BANK_4KB * 2;
+const BANK_16KB: u32 = BANK_8KB * 2;
+const BANK_32KB: u32 = BANK_16KB * 2;

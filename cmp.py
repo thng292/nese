@@ -1,3 +1,5 @@
+import sys
+
 class cpuState:
     instruction: str
     a: str
@@ -27,15 +29,17 @@ def parseThey(line: str) -> cpuState:
     return res
 
 def main():
-    me = open('me.txt')
-    they = open('they.txt')
+    if len(sys.argv) != 3:
+        print("Usage: python cmp.py <filename1> <filename2>")
+    me = open(sys.argv[1])
+    they = open(sys.argv[2])
     count = 0
     for mel, theyl in zip(me, they):
         count += 1
         a = parseMe(mel)
         b = parseThey(theyl)
-        if a.instruction != b.instruction or a.cyc != b.cyc or a.a != b.a or a.x != b.x or a.y != b.y or a.flag != b.flag:
-            print("Who: Me | They")
+        if a.instruction != b.instruction:# or a.cyc != b.cyc or a.a != b.a or a.x != b.x or a.y != b.y or a.flag != b.flag:
+            print("File: File 1 | File 2")
             print("Instruction:", a.instruction, b.instruction)
             print('A:',a.a, b.a)
             print('X:',a.x, b.x)

@@ -135,6 +135,10 @@ pub fn clock(self: *PPU, texture_data: [*]u8) !void {
     }
     // }
 
+    if (self.scanline == self.mapper.getNMIScanline() and self.cycle == 0) {
+        self.nmiSend = true;
+    }
+
     // Draw
     var sprite_behind_bg = false;
     var color_out_sprite: u8 = 0;

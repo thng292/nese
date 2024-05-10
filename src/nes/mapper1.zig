@@ -3,12 +3,7 @@ const mapperInterface = @import("mapper.zig");
 const ROM = @import("ines.zig").ROM;
 
 const Self = @This();
-const BANK_4KB: u32 = 0x1000;
-const BANK_8KB: u32 = BANK_4KB * 2;
-const BANK_16KB: u32 = BANK_8KB * 2;
-const BANK_32KB: u32 = BANK_16KB * 2;
 const start_addr: u16 = 0x8000;
-
 rom: *ROM,
 
 cpu_bank_0: u8 = 0,
@@ -122,15 +117,15 @@ pub fn cpuWrite(self: *Self, addr: u16, data: u8) void {
             },
         }
 
-        std.debug.print("self ptr: {*}\n", .{self});
-        std.debug.print("{b:0>8}\n", .{self.control_reg});
-        std.debug.print("ppu_bank_0: {}\n", .{self.ppu_bank_0});
-        std.debug.print("ppu_bank_1: {}\n", .{self.ppu_bank_1});
-        std.debug.print("ppu_bank_8k: {}\n", .{self.ppu_bank_8k});
-        std.debug.print("cpu_bank_0: {}\n", .{self.cpu_bank_0});
-        std.debug.print("cpu_bank_1: {}\n", .{self.cpu_bank_1});
-        std.debug.print("cpu_bank_32k: {}\n", .{self.cpu_bank_32k});
-        std.debug.print("\n", .{});
+        // std.debug.print("self ptr: {*}\n", .{self});
+        // std.debug.print("{b:0>8}\n", .{self.control_reg});
+        // std.debug.print("ppu_bank_0: {}\n", .{self.ppu_bank_0});
+        // std.debug.print("ppu_bank_1: {}\n", .{self.ppu_bank_1});
+        // std.debug.print("ppu_bank_8k: {}\n", .{self.ppu_bank_8k});
+        // std.debug.print("cpu_bank_0: {}\n", .{self.cpu_bank_0});
+        // std.debug.print("cpu_bank_1: {}\n", .{self.cpu_bank_1});
+        // std.debug.print("cpu_bank_32k: {}\n", .{self.cpu_bank_32k});
+        // std.debug.print("\n", .{});
         self.write_count = 0;
         self.shift_reg = 0;
     }
@@ -187,3 +182,8 @@ const PRG_bank_mode = enum(u2) {
     fix_first_bank = 2,
     fix_last_bank = 3,
 };
+
+const BANK_4KB: u32 = 0x1000;
+const BANK_8KB: u32 = BANK_4KB * 2;
+const BANK_16KB: u32 = BANK_8KB * 2;
+const BANK_32KB: u32 = BANK_16KB * 2;

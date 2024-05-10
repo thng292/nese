@@ -298,9 +298,9 @@ fn AND(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
     if (!am_res.res_fetched) {
         am_res.res = self.bus.read(am_res.addr);
     }
-    self.a &= am_res.res;
+    self.a = self.a & am_res.res;
     self.status.zero = if (self.a == 0) 1 else 0;
-    self.status.negative = if ((self.a >> 7) != 0) 1 else 0;
+    self.status.negative = if ((self.a >> 7) & 1 != 0) 1 else 0;
     const instruction_cycle = [8]u8{ 6, 3, 2, 4, 5, 4, 4, 4 };
     return instruction_cycle[addr_mode];
 }

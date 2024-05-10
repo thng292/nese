@@ -31,7 +31,7 @@ pub inline fn init(allocator: std.mem.Allocator, rom_file: std.fs.File) !Nes {
 }
 
 pub fn startup(self: *Nes, apu: APU) !void {
-    // std.debug.print("ROM Info: \n{}\n", .{self.rom.header});
+    std.debug.print("ROM Info: \n{}\n", .{self.rom.header});
     const mapper = try self.createMapper();
     self.bus = Bus{
         .mapper = mapper,
