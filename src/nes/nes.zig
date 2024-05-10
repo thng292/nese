@@ -55,6 +55,8 @@ pub fn startup(self: *Nes, apu: APU) !void {
         .bus = &self.bus,
     };
     self.cpu.reset();
+    std.debug.print("Ptr to mapper ctx: {*}\n", .{self.bus.mapper.context});
+    std.debug.print("Ptr to mapper mem: {*}\n", .{&self.mapperMem});
 }
 
 pub fn deinit(self: *Nes) void {
