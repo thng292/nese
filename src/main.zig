@@ -25,7 +25,7 @@ pub fn main() !void {
     defer out.close();
 
     try sdl.init(sdl.InitFlags.everything);
-    defer sdl.quit();
+    // defer sdl.quit();
 
     const main_wind = try Window.create(
         rom_name.?,
@@ -128,7 +128,7 @@ pub fn main() !void {
         fast_forward = false;
         while (sdl.pollEvent(&event)) {
             switch (event.type) {
-                .quit => std.process.exit(0),
+                .quit => return,
                 .keydown => {
                     switch (event.key.keysym.scancode) {
                         .f2 => screen = if (screen == .Paused) .RunningGame else .Paused,
@@ -217,8 +217,8 @@ const Window = struct {
     }
 
     pub fn destroy(self: *const Window) void {
-        self.window.destroy();
         self.renderer.destroy();
+        self.window.destroy();
     }
 };
 

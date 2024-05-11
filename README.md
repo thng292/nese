@@ -34,6 +34,8 @@ nese [path-to-ines-file]
 | <kbd>F3</kbd> | Step frame                                           |
 | <kbd>F4</kbd> | Print PPU debug info to console                      |
 | <kbd>F5</kbd> | Enable logging (slow the emulator down dramatically) |
+| <kbd>F6</kbd> | Draw 2 pattern table on screen                       |
+| <kbd>F7</kbd> | Fast forward                                         |
 
 ### Player 1
 

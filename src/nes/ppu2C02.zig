@@ -561,6 +561,8 @@ pub fn printPPUDebug(self: *PPU) void {
     std.debug.print("STATUS:\n", .{});
     printStruct(self.status);
 
+    std.debug.print("MIRRORING: {}\n", .{self.mapper.getMirroringMode()});
+
     std.debug.print("OAM==========================================\n", .{});
     var i: u16 = 0;
     while (i < 256) : (i += 4) {
@@ -577,9 +579,9 @@ pub fn printPPUDebug(self: *PPU) void {
 
 const tmp_color = [_]sdl.Color{
     .{ .r = 0, .g = 0, .b = 0, .a = 255 },
-    .{ .r = 255, .g = 0, .b = 0, .a = 255 },
-    .{ .r = 0, .g = 255, .b = 0, .a = 255 },
-    .{ .r = 0, .g = 0, .b = 255, .a = 255 },
+    .{ .r = 84, .g = 13, .b = 110, .a = 255 },
+    .{ .r = 238, .g = 66, .b = 102, .a = 255 },
+    .{ .r = 255, .g = 210, .b = 63, .a = 255 },
 };
 
 pub fn draw_chr(self: *PPU, texture_data: [*]u8) void {

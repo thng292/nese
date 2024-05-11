@@ -22,8 +22,6 @@ const ControlReg = packed struct(u8) {
 };
 
 pub fn init(rom: *ROM) Self {
-    // std.debug.print("Control: {}\n", .{@as(ControlReg, @bitCast(@as(u8, 0x1C)))});
-    // std.debug.print("Init: {}\n", .{rom.header.PRG_ROM_Size - 1});
     return .{
         .rom = rom,
         .cpu_bank_1 = rom.header.PRG_ROM_Size - 1,
@@ -79,6 +77,7 @@ pub fn cpuWrite(self: *Self, addr: u16, data: u8) void {
     switch (target_register) {
         0 => {
             self.control = @bitCast(self.shift_reg & 0x1F);
+            // std.debug.print("Updated ctrl: {}\n", .{self.control});
         },
         1 => {
             if (self.control.ppu_switch_4kb) {

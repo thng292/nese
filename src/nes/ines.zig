@@ -73,6 +73,7 @@ pub const ROM = struct {
             .CHR_RomBanks = undefined,
             .allocator = allocator,
         };
+
         var buff = std.mem.zeroes([16]u8);
         var read = try file.read(&buff);
         if (read != 16) {
@@ -84,14 +85,6 @@ pub const ROM = struct {
             return romError.FileNotNESRom;
         }
 
-        self.PRG_RamBanks = try self.allocator.alloc(
-            u8,
-            if (self.header.PRG_RAM_Size != 0) self.header.PRG_RAM_Size * BANK_8KB else BANK_32KB,
-        );
-        errdefer {
-            self.allocator.free(self.PRG_RamBanks);
-        }
-
         self.PRG_RomBanks = try self.allocator.alloc(u8, self.header.getPRGROMSize());
         read = try file.read(self.PRG_RomBanks);
         if (read != self.header.getPRGROMSize()) {
@@ -101,6 +94,25 @@ pub const ROM = struct {
         errdefer {
             self.allocator.free(self.PRG_RomBanks);
         }
+
+        self.PRG_RamBanks = try self.allocator.alloc(
+            u8,
+            if (self.header.PRG_RAM_Size != 0) self.header.PRG_RAM_Size * BANK_8KB else BANK_32KB,
+        );
+        errdefer {
+            self.allocator.free(self.PRG_RamBanks);
+        }
+        const hashed = jenkinsHash(self.PRG_RomBanks);
+        const save_file_path = try std.fmt.allocPrint(
+            allocator,
+            save_path ++ "{X:0>8}.bin",
+            .{hashed},
+        );
+        const save_file = std.fs.cwd().openFile(save_file_path, .{});
+        if (save_file) |ff| {
+            _ = try ff.readAll(self.PRG_RamBanks);
+            ff.close();
+        } else |_| {}
 
         const CHR_ROM_size = self.header.getCHRROMSize();
         read = 0;
@@ -122,6 +134,21 @@ pub const ROM = struct {
     }
 
     pub fn deinit(self: *ROM) void {
+        if (self.header.hasPersistentMem) save_fail: {
+            // Dump the ram
+            const hashed = jenkinsHash(self.PRG_RomBanks);
+            const save_file_name = std.fmt.allocPrint(
+                self.allocator,
+                save_path ++ "{X:0>8}.bin",
+                .{hashed},
+            ) catch save_path ++ "last_save.bin";
+            const cwd = std.fs.cwd();
+            cwd.makeDir("saves") catch {};
+            const save_file = cwd.createFile(save_file_name, .{}) catch break :save_fail;
+            defer save_file.close();
+            save_file.writeAll(self.PRG_RamBanks) catch break :save_fail;
+        }
+
         self.allocator.free(self.PRG_RomBanks);
         self.allocator.free(self.PRG_RamBanks);
         self.allocator.free(self.CHR_RomBanks);
@@ -138,3 +165,19 @@ const BANK_4KB: u32 = 0x1000;
 const BANK_8KB: u32 = BANK_4KB * 2;
 const BANK_16KB: u32 = BANK_8KB * 2;
 const BANK_32KB: u32 = BANK_16KB * 2;
+
+const save_path = "saves/";
+
+pub fn jenkinsHash(in: []const u8) u32 {
+    var hash: u32 = 0;
+    for (in) |byte| {
+        hash +%= byte;
+        hash +%= hash << 10;
+        hash ^= hash >> 6;
+    }
+
+    hash +%= hash << 3;
+    hash ^= hash >> 11;
+    hash +%= hash << 15;
+    return hash;
+}
