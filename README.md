@@ -21,7 +21,7 @@ nese [path-to-ines-file]
 
 - iNes 2.0
 - ~~Super mario brothers (IDK why)~~ (CMP set flags fault)
-- Tetris (BG not render while playing)
+- ~~Tetris (BG not render while playing)~~ (forgot to implement single screen mirroring)
 - Audio (I got no idea how audio work)
 
 ## Default Control

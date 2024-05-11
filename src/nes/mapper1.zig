@@ -149,8 +149,8 @@ pub fn ppuWrite(self: *Self, addr: u16, data: u8) void {
 pub fn getMirroringMode(self: *Self) mapperInterface.MirroringMode {
     const tmp: u2 = @truncate(self.control_reg & 0b11);
     return switch (tmp) {
-        0 => .Vertical,
-        1 => .Vertical,
+        0 => .Single_lower,
+        1 => .Single_upper,
         2 => .Vertical,
         3 => .Horizontal,
     };

@@ -444,15 +444,13 @@ fn resolveNametableAddr(self: *PPU, addr: u16) u16 {
     const ntaddr = addr - 0x2000;
     var nametable_num = ntaddr / 0x400;
     const ntindex = ntaddr % 0x400;
+    const ntmap_h = [_]u8{ 0, 0, 1, 1 };
+    const ntmap_v = [_]u8{ 0, 1, 0, 1 };
     switch (self.mirroring) {
-        .Horizontal => {
-            const ntmap = [_]u8{ 0, 0, 1, 1 };
-            nametable_num = ntmap[nametable_num];
-        },
-        .Vertical => {
-            const ntmap = [_]u8{ 0, 1, 0, 1 };
-            nametable_num = ntmap[nametable_num];
-        },
+        .Single_lower => nametable_num = 0,
+        .Single_upper => nametable_num = 1,
+        .Horizontal => nametable_num = ntmap_h[nametable_num],
+        .Vertical => nametable_num = ntmap_v[nametable_num],
     }
     return nametable_num * 0x400 + ntindex;
 }

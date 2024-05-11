@@ -119,11 +119,13 @@ pub fn main() !void {
     };
     var screen: Screen = .RunningGame;
     var step = false;
+    var fast_forward = false;
 
     const frame_deadline = @as(f64, 1000) / 60;
     var start = sdl.getPerformanceCounter();
     var total_time: f64 = 0;
     while (true) {
+        fast_forward = false;
         while (sdl.pollEvent(&event)) {
             switch (event.type) {
                 .quit => std.process.exit(0),
@@ -144,6 +146,7 @@ pub fn main() !void {
                             }
                         },
                         .f6 => screen = .DisplayCHR,
+                        .f7 => fast_forward = true,
                         else => {},
                     }
                 },
@@ -152,7 +155,7 @@ pub fn main() !void {
             nes.handleKey(event);
         }
 
-        if (total_time > frame_deadline) {
+        if (total_time > frame_deadline or fast_forward) {
             total_time = 0;
             switch (screen) {
                 .RunningGame => nes.runFrame(game_screen) catch |err| {

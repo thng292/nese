@@ -1,7 +1,9 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
-pub const MirroringMode = enum(u1) {
+pub const MirroringMode = enum(u2) {
+    Single_upper,
+    Single_lower,
     Horizontal,
     Vertical,
 };
