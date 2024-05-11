@@ -5,7 +5,6 @@ const Rom = @import("ines.zig").ROM;
 
 const PPU = @This();
 mapper: Mapper,
-mirroring: Mapper.MirroringMode = .Vertical,
 
 ctrl: PPUCTRL = std.mem.zeroes(PPUCTRL),
 mask: PPUMASK = std.mem.zeroes(PPUMASK),
@@ -50,7 +49,6 @@ pub fn init(mapper: Mapper) !PPU {
 pub fn clock(self: *PPU, texture_data: [*]u8) !void {
     if (self.scanline >= -1 and self.scanline < 240) {
         if (self.scanline == 0 and self.cycle == 0) {
-            self.mirroring = self.mapper.getMirroringMode();
             self.texture_pixel_count = 0;
             if (self.odd_frame) {
                 self.cycle = 1;
@@ -440,26 +438,11 @@ pub fn write(self: *PPU, addr: u16, data: u8) void {
     }
 }
 
-fn resolveNametableAddr(self: *PPU, addr: u16) u16 {
-    const ntaddr = addr - 0x2000;
-    var nametable_num = ntaddr / 0x400;
-    const ntindex = ntaddr % 0x400;
-    const ntmap_h = [_]u8{ 0, 0, 1, 1 };
-    const ntmap_v = [_]u8{ 0, 1, 0, 1 };
-    switch (self.mirroring) {
-        .Single_lower => nametable_num = 0,
-        .Single_upper => nametable_num = 1,
-        .Horizontal => nametable_num = ntmap_h[nametable_num],
-        .Vertical => nametable_num = ntmap_v[nametable_num],
-    }
-    return nametable_num * 0x400 + ntindex;
-}
-
 fn internalRead(self: *PPU, addr: u16) u8 {
     return switch (addr) {
         0x0000...0x1FFF => self.mapper.ppuRead(addr),
-        0x2000...0x2FFF => self.nametable[self.resolveNametableAddr(addr)],
-        0x3000...0x3EFF => self.nametable[self.resolveNametableAddr(addr - 0x3000 + 0x2000)],
+        0x2000...0x2FFF => self.nametable[self.mapper.resolveNametableAddr(addr)],
+        0x3000...0x3EFF => self.nametable[self.mapper.resolveNametableAddr(addr - 0x3000 + 0x2000)],
         0x3F00...0x3F0F => self.imagePalette[addr - 0x3F00],
         0x3F10...0x3F1F => self.spritePalette[addr - 0x3F10],
         0x3F20...0x3FFF => blk: {
@@ -478,8 +461,8 @@ fn internalRead(self: *PPU, addr: u16) u8 {
 fn internalWrite(self: *PPU, addr: u16, data: u8) void {
     return switch (addr) {
         0x0000...0x1FFF => self.mapper.ppuWrite(addr, data),
-        0x2000...0x2FFF => self.nametable[self.resolveNametableAddr(addr)] = data,
-        0x3000...0x3EFF => self.nametable[self.resolveNametableAddr(addr - 0x3000 + 0x2000)] = data,
+        0x2000...0x2FFF => self.nametable[self.mapper.resolveNametableAddr(addr)] = data,
+        0x3000...0x3EFF => self.nametable[self.mapper.resolveNametableAddr(addr - 0x3000 + 0x2000)] = data,
         0x3F00...0x3F0F => {
             const tmp = addr - 0x3F00;
             self.imagePalette[tmp] = data;
@@ -560,8 +543,6 @@ pub fn printPPUDebug(self: *PPU) void {
 
     std.debug.print("STATUS:\n", .{});
     printStruct(self.status);
-
-    std.debug.print("MIRRORING: {}\n", .{self.mapper.getMirroringMode()});
 
     std.debug.print("OAM==========================================\n", .{});
     var i: u16 = 0;

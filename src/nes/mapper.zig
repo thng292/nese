@@ -1,13 +1,6 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
-pub const MirroringMode = enum(u2) {
-    Single_lower,
-    Single_upper,
-    Vertical,
-    Horizontal,
-};
-
 pub const MapperTag = enum(u8) {
     Mapper0,
     Mapper1,
@@ -23,7 +16,7 @@ cpu_read_fn: *const fn (context: *void, addr: u16) u8,
 cpu_write_fn: *const fn (context: *void, addr: u16, data: u8) void,
 ppu_read_fn: *const fn (context: *void, addr: u16) u8,
 ppu_write_fn: *const fn (context: *void, addr: u16, data: u8) void,
-get_mirroring_mode_fn: *const fn (context: *void) MirroringMode,
+resolve_nametable_addr_fn: *const fn (context: *void, addr: u16) u16,
 get_nmi_scanline_fn: *const fn (context: *void) u16,
 
 pub inline fn cpuRead(self: *Mapper, addr: u16) u8 {
@@ -42,8 +35,8 @@ pub inline fn ppuWrite(self: *Mapper, addr: u16, data: u8) void {
     return self.ppu_write_fn(self.context, addr, data);
 }
 
-pub inline fn getMirroringMode(self: *Mapper) MirroringMode {
-    return self.get_mirroring_mode_fn(self.context);
+pub inline fn resolveNametableAddr(self: *Mapper, addr: u16) u16 {
+    return self.resolve_nametable_addr_fn(self.context, addr);
 }
 
 pub inline fn getNMIScanline(self: *Mapper) u16 {
@@ -77,9 +70,9 @@ pub fn toMapper(ptr: anytype) Mapper {
             return tmp.ppuWrite(address, data);
         }
 
-        pub fn getMirroringMode(context: *void) MirroringMode {
+        pub fn resolveNametableAddr(context: *void, address: u16) u16 {
             const tmp: T = @alignCast(@ptrCast(context));
-            return tmp.getMirroringMode();
+            return tmp.resolveNametableAddr(address);
         }
 
         pub fn getNMIScanline(context: *void) u16 {
@@ -94,7 +87,7 @@ pub fn toMapper(ptr: anytype) Mapper {
         .cpu_write_fn = anon.cpuWrite,
         .ppu_read_fn = anon.ppuRead,
         .ppu_write_fn = anon.ppuWrite,
-        .get_mirroring_mode_fn = anon.getMirroringMode,
+        .resolve_nametable_addr_fn = anon.resolveNametableAddr,
         .get_nmi_scanline_fn = anon.getNMIScanline,
     };
 }
@@ -102,31 +95,24 @@ pub fn toMapper(ptr: anytype) Mapper {
 test "To Mapper Interface" {
     const anon = struct {
         const Self = @This();
-        pub fn cpuRead(context: *Self, address: u16) u8 {
-            _ = address;
-            _ = context;
+        pub fn cpuRead(_: *Self, _: u16) u8 {
             return 42;
         }
 
-        pub fn cpuWrite(context: *Self, address: u16, data: u8) void {
-            _ = data;
-            _ = address;
-            _ = context;
+        pub fn cpuWrite(_: *Self, _: u16, _: u8) void {}
+
+        pub fn ppuRead(_: *Self, _: u16) u8 {
+            return 0;
         }
 
-        pub fn ppuDecode(context: *Self, addr: u16) u16 {
-            _ = context;
-            return addr;
+        pub fn ppuWrite(_: *Self, _: u16, _: u8) void {}
+
+        pub fn resolveNametableAddr(_: *Self, _: u16) u16 {
+            return 0;
         }
 
-        pub fn getMirroringMode(context: *Self) MirroringMode {
-            _ = context;
-            return .Vertical;
-        }
-
-        pub fn getNMIScanline(context: *Self) u16 {
-            _ = context;
-            return 400;
+        pub fn getNMIScanline(_: *Self) u16 {
+            return 0;
         }
     };
 

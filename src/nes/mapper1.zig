@@ -15,7 +15,7 @@ shift_reg: u8 = 0,
 control: ControlReg = @bitCast(@as(u8, 0x1C)),
 
 const ControlReg = packed struct(u8) {
-    mirroring: mapperInterface.MirroringMode,
+    mirroring: Mirroring,
     PRG_bank_mode: PRG_bank_mode,
     ppu_switch_4kb: bool,
     _pad: u3,
@@ -128,8 +128,19 @@ pub fn ppuWrite(self: *Self, addr: u16, data: u8) void {
     self.rom.CHR_RomBanks[addr] = data;
 }
 
-pub fn getMirroringMode(self: *Self) mapperInterface.MirroringMode {
-    return self.control.mirroring;
+pub fn resolveNametableAddr(self: *Self, addr: u16) u16 {
+    const ntaddr = addr - 0x2000;
+    var nametable_num = ntaddr / 0x400;
+    const ntindex = ntaddr % 0x400;
+    const ntmap_h = [_]u8{ 0, 0, 1, 1 };
+    const ntmap_v = [_]u8{ 0, 1, 0, 1 };
+    switch (self.control.mirroring) {
+        .Single_lower => nametable_num = 0,
+        .Single_upper => nametable_num = 1,
+        .Horizontal => nametable_num = ntmap_h[nametable_num],
+        .Vertical => nametable_num = ntmap_v[nametable_num],
+    }
+    return nametable_num * 0x400 + ntindex;
 }
 
 pub fn getNMIScanline(self: *Self) u16 {
@@ -140,6 +151,13 @@ pub fn getNMIScanline(self: *Self) u16 {
 pub fn toMapper(self: *Self) mapperInterface {
     return mapperInterface.toMapper(self);
 }
+
+const Mirroring = enum(u2) {
+    Single_lower,
+    Single_upper,
+    Vertical,
+    Horizontal,
+};
 
 const PRG_bank_mode = enum(u2) {
     switch32_0 = 0,
