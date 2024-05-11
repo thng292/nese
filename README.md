@@ -16,6 +16,7 @@ nese [path-to-ines-file]
 - PPU (Sprite and Background rendering)
 - Control
 - CHR Ram (even on mapper 0)
+- Saves
 
 ## Things that not worked
 
