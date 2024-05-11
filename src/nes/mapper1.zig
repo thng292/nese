@@ -8,19 +8,14 @@ rom: *ROM,
 
 cpu_bank_0: u8 = 0,
 cpu_bank_1: u8 = 0,
-cpu_bank_32k: u8 = 0,
-
 ppu_bank_0: u8 = 0,
 ppu_bank_1: u8 = 0,
-ppu_bank_8k: u8 = 0,
 
 shift_reg: u8 = 0,
-write_count: u8 = 0,
-control_reg: u8 = 0x1C,
-// control_reg: ControlReg = @bitCast(@as(u8, 0x1C)),
+control: ControlReg = @bitCast(@as(u8, 0x1C)),
 
 const ControlReg = packed struct(u8) {
-    mirroring: MirrorMode,
+    mirroring: mapperInterface.MirroringMode,
     PRG_bank_mode: PRG_bank_mode,
     ppu_switch_4kb: bool,
     _pad: u3,
@@ -40,7 +35,8 @@ pub fn cpuRead(self: *Self, addr: u16) u8 {
         return self.rom.PRG_RamBanks[addr - 0x6000];
     }
 
-    if (self.control_reg & 0b1000 != 0) {
+    if (self.control.PRG_bank_mode == .fix_first_bank //
+    or self.control.PRG_bank_mode == .fix_last_bank) {
         // 16KB mode
         if (addr <= 0xBFFF) {
             return self.rom.PRG_RomBanks[
@@ -54,76 +50,63 @@ pub fn cpuRead(self: *Self, addr: u16) u8 {
     }
     // 32KB mode
     return self.rom.PRG_RomBanks[
-        self.cpu_bank_32k * BANK_32KB + addr - start_addr
+        self.cpu_bank_0 * BANK_32KB + addr - start_addr
     ];
 }
 
 pub fn cpuWrite(self: *Self, addr: u16, data: u8) void {
     if (addr < 0x8000) {
-        if (addr - 0x6000 < self.rom.PRG_RamBanks.len) {
-            self.rom.PRG_RamBanks[addr - 0x6000] = data;
-        }
+        self.rom.PRG_RamBanks[addr - 0x6000] = data;
         return;
     }
-    if (data & 0x80 != 0) {
-        self.shift_reg = 0;
-        self.write_count = 0;
-        self.control_reg = data | 0x0C;
-    } else {
-        self.shift_reg >>= 1;
-        self.shift_reg |= (data & 0b1) << 4;
-        self.write_count += 1;
+    if (data & 0x80 != 0) { // Reset
+        self.shift_reg = 1;
+        self.control = @bitCast(data | 0x0C0);
+        return;
+    }
 
-        if (self.write_count != 5) {
-            return;
-        }
+    self.shift_reg <<= 1;
+    self.shift_reg |= data & 0b1;
 
-        const target_register: u2 = @truncate((addr >> 13) & 0b11);
-        switch (target_register) {
-            0 => {
-                self.control_reg = self.shift_reg & 0x1F;
-            },
-            1 => {
-                if (self.control_reg & 0b10000 != 0) {
-                    self.ppu_bank_0 = self.shift_reg & 0x1F;
-                } else {
-                    self.ppu_bank_8k = self.shift_reg & 0x1E;
-                }
-            },
-            2 => {
-                if (self.control_reg & 0b10000 != 0) {
-                    self.ppu_bank_1 = self.shift_reg & 0x1F;
-                }
-            },
-            3 => {
-                const PRG_mode: u2 = @truncate(self.control_reg >> 2 & 0b11);
-                switch (PRG_mode) {
-                    0, 1 => {
-                        self.cpu_bank_32k = (self.shift_reg & 0xE) >> 1;
-                    },
-                    2 => {
-                        self.cpu_bank_0 = 0;
-                        self.cpu_bank_1 = self.shift_reg & 0xF;
-                    },
-                    3 => {
-                        self.cpu_bank_0 = self.shift_reg & 0xF;
-                        self.cpu_bank_1 = self.rom.header.PRG_ROM_Size - 1;
-                    },
-                }
-            },
-        }
+    if (self.shift_reg & 0b100000 == 0) {
+        return;
+    }
 
-        // std.debug.print("self ptr: {*}\n", .{self});
-        // std.debug.print("{b:0>8}\n", .{self.control_reg});
-        // std.debug.print("ppu_bank_0: {}\n", .{self.ppu_bank_0});
-        // std.debug.print("ppu_bank_1: {}\n", .{self.ppu_bank_1});
-        // std.debug.print("ppu_bank_8k: {}\n", .{self.ppu_bank_8k});
-        // std.debug.print("cpu_bank_0: {}\n", .{self.cpu_bank_0});
-        // std.debug.print("cpu_bank_1: {}\n", .{self.cpu_bank_1});
-        // std.debug.print("cpu_bank_32k: {}\n", .{self.cpu_bank_32k});
-        // std.debug.print("\n", .{});
-        self.write_count = 0;
-        self.shift_reg = 0;
+    self.shift_reg = @bitReverse(self.shift_reg) >> 3;
+    defer self.shift_reg = 1;
+
+    const target_register: u2 = @truncate((addr >> 13) & 0b11);
+    switch (target_register) {
+        0 => {
+            self.control = @bitCast(self.shift_reg & 0x1F);
+        },
+        1 => {
+            if (self.control.ppu_switch_4kb) {
+                self.ppu_bank_0 = self.shift_reg & 0x1F;
+            } else {
+                self.ppu_bank_0 = self.shift_reg & 0x1E;
+            }
+        },
+        2 => {
+            if (self.control.ppu_switch_4kb) {
+                self.ppu_bank_1 = self.shift_reg & 0x1F;
+            }
+        },
+        3 => {
+            switch (self.control.PRG_bank_mode) {
+                .switch32_0, .switch32_1 => {
+                    self.cpu_bank_0 = (self.shift_reg & 0xE) >> 1;
+                },
+                .fix_first_bank => {
+                    self.cpu_bank_0 = 0;
+                    self.cpu_bank_1 = self.shift_reg & 0xF;
+                },
+                .fix_last_bank => {
+                    self.cpu_bank_0 = self.shift_reg & 0xF;
+                    self.cpu_bank_1 = self.rom.header.PRG_ROM_Size - 1;
+                },
+            }
+        },
     }
 }
 
@@ -131,14 +114,14 @@ pub fn ppuRead(self: *Self, addr: u16) u8 {
     if (self.rom.header.CHR_ROM_Size == 0) {
         return self.rom.CHR_RomBanks[addr];
     }
-    if (self.control_reg & 0b10000 != 0) {
+    if (self.control.ppu_switch_4kb) {
         if (addr < 0x1000) {
             return self.rom.CHR_RomBanks[self.ppu_bank_0 * BANK_4KB + addr];
         } else {
             return self.rom.CHR_RomBanks[self.ppu_bank_1 * BANK_4KB + addr - BANK_4KB];
         }
     } else {
-        return self.rom.CHR_RomBanks[self.ppu_bank_8k * BANK_8KB + addr];
+        return self.rom.CHR_RomBanks[self.ppu_bank_0 * BANK_8KB + addr];
     }
 }
 
@@ -147,13 +130,7 @@ pub fn ppuWrite(self: *Self, addr: u16, data: u8) void {
 }
 
 pub fn getMirroringMode(self: *Self) mapperInterface.MirroringMode {
-    const tmp: u2 = @truncate(self.control_reg & 0b11);
-    return switch (tmp) {
-        0 => .Single_lower,
-        1 => .Single_upper,
-        2 => .Vertical,
-        3 => .Horizontal,
-    };
+    return self.control.mirroring;
 }
 
 pub fn getNMIScanline(self: *Self) u16 {
@@ -164,13 +141,6 @@ pub fn getNMIScanline(self: *Self) u16 {
 pub fn toMapper(self: *Self) mapperInterface {
     return mapperInterface.toMapper(self);
 }
-
-const MirrorMode = enum(u2) {
-    lower_bank = 0,
-    upper_bank = 1,
-    vertical = 2,
-    horizontal = 3,
-};
 
 const PRG_bank_mode = enum(u2) {
     switch32_0 = 0,
