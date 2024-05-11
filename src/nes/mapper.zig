@@ -17,7 +17,7 @@ cpu_write_fn: *const fn (context: *void, addr: u16, data: u8) void,
 ppu_read_fn: *const fn (context: *void, addr: u16) u8,
 ppu_write_fn: *const fn (context: *void, addr: u16, data: u8) void,
 resolve_nametable_addr_fn: *const fn (context: *void, addr: u16) u16,
-get_nmi_scanline_fn: *const fn (context: *void) u16,
+should_irq_fn: *const fn (context: *void) bool,
 
 pub inline fn cpuRead(self: *Mapper, addr: u16) u8 {
     return self.cpu_read_fn(self.context, addr);
@@ -39,8 +39,8 @@ pub inline fn resolveNametableAddr(self: *Mapper, addr: u16) u16 {
     return self.resolve_nametable_addr_fn(self.context, addr);
 }
 
-pub inline fn getNMIScanline(self: *Mapper) u16 {
-    return self.get_nmi_scanline_fn(self.context);
+pub inline fn shouldIrq(self: *Mapper) bool {
+    return self.should_irq_fn(self.context);
 }
 
 pub fn toMapper(ptr: anytype) Mapper {
@@ -75,9 +75,9 @@ pub fn toMapper(ptr: anytype) Mapper {
             return tmp.resolveNametableAddr(address);
         }
 
-        pub fn getNMIScanline(context: *void) u16 {
+        pub fn shouldIrq(context: *void) bool {
             const tmp: T = @alignCast(@ptrCast(context));
-            return tmp.getNMIScanline();
+            return tmp.shouldIrq();
         }
     };
 
@@ -88,7 +88,7 @@ pub fn toMapper(ptr: anytype) Mapper {
         .ppu_read_fn = anon.ppuRead,
         .ppu_write_fn = anon.ppuWrite,
         .resolve_nametable_addr_fn = anon.resolveNametableAddr,
-        .get_nmi_scanline_fn = anon.getNMIScanline,
+        .should_irq_fn = anon.shouldIrq,
     };
 }
 
@@ -111,7 +111,7 @@ test "To Mapper Interface" {
             return 0;
         }
 
-        pub fn getNMIScanline(_: *Self) u16 {
+        pub fn shouldIrq(_: *Self) bool {
             return 0;
         }
     };

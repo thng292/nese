@@ -30,31 +30,31 @@ pub fn init(rom: *ROM) Self {
 
 pub fn cpuRead(self: *Self, addr: u16) u8 {
     if (addr <= 0x7FFF) {
-        return self.rom.PRG_RamBanks[addr - 0x6000];
+        return self.rom.PRG_Ram[addr - 0x6000];
     }
 
     if (self.control.PRG_bank_mode == .fix_first_bank //
     or self.control.PRG_bank_mode == .fix_last_bank) {
         // 16KB mode
         if (addr <= 0xBFFF) {
-            return self.rom.PRG_RomBanks[
+            return self.rom.PRG_Rom[
                 self.cpu_bank_0 * BANK_16KB + addr - start_addr
             ];
         } else {
-            return self.rom.PRG_RomBanks[
+            return self.rom.PRG_Rom[
                 self.cpu_bank_1 * BANK_16KB + addr - (start_addr + BANK_16KB)
             ];
         }
     }
     // 32KB mode
-    return self.rom.PRG_RomBanks[
+    return self.rom.PRG_Rom[
         self.cpu_bank_0 * BANK_32KB + addr - start_addr
     ];
 }
 
 pub fn cpuWrite(self: *Self, addr: u16, data: u8) void {
     if (addr < 0x8000) {
-        self.rom.PRG_RamBanks[addr - 0x6000] = data;
+        self.rom.PRG_Ram[addr - 0x6000] = data;
         return;
     }
     if (data & 0x80 != 0) { // Reset
@@ -111,21 +111,21 @@ pub fn cpuWrite(self: *Self, addr: u16, data: u8) void {
 
 pub fn ppuRead(self: *Self, addr: u16) u8 {
     if (self.rom.header.CHR_ROM_Size == 0) {
-        return self.rom.CHR_RomBanks[addr];
+        return self.rom.CHR_Rom[addr];
     }
     if (self.control.ppu_switch_4kb) {
         if (addr < 0x1000) {
-            return self.rom.CHR_RomBanks[self.ppu_bank_0 * BANK_4KB + addr];
+            return self.rom.CHR_Rom[self.ppu_bank_0 * BANK_4KB + addr];
         } else {
-            return self.rom.CHR_RomBanks[self.ppu_bank_1 * BANK_4KB + addr - BANK_4KB];
+            return self.rom.CHR_Rom[self.ppu_bank_1 * BANK_4KB + addr - BANK_4KB];
         }
     } else {
-        return self.rom.CHR_RomBanks[self.ppu_bank_0 * BANK_8KB + addr];
+        return self.rom.CHR_Rom[self.ppu_bank_0 * BANK_8KB + addr];
     }
 }
 
 pub fn ppuWrite(self: *Self, addr: u16, data: u8) void {
-    self.rom.CHR_RomBanks[addr] = data;
+    self.rom.CHR_Rom[addr] = data;
 }
 
 pub fn resolveNametableAddr(self: *Self, addr: u16) u16 {
@@ -143,9 +143,9 @@ pub fn resolveNametableAddr(self: *Self, addr: u16) u16 {
     return nametable_num * 0x400 + ntindex;
 }
 
-pub fn getNMIScanline(self: *Self) u16 {
+pub fn shouldIrq(self: *Self) bool {
     _ = self;
-    return 400;
+    return false;
 }
 
 pub fn toMapper(self: *Self) mapperInterface {

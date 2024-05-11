@@ -14,6 +14,7 @@ const Mapper0 = @import("mapper0.zig");
 const Mapper1 = @import("mapper1.zig");
 const Mapper2 = @import("mapper2.zig");
 const Mapper3 = @import("mapper3.zig");
+const Mapper4 = @import("mapper4.zig");
 
 const Nes = @This();
 const dot_per_frame = 341 * 262;
@@ -81,6 +82,10 @@ pub fn runFrame(self: *Nes, game_screen: *sdl.Texture) !void {
             self.bus.ppu.nmiSend = false;
             self.bus.nmiSet = true;
         }
+        if (self.bus.ppu.irqSend) {
+            self.bus.ppu.irqSend = false;
+            self.bus.irqSet = true;
+        }
         self.counter +%= 1;
     }
 }
@@ -96,7 +101,7 @@ const MapperTag = enum(u8) {
     mapper1,
     mapper2,
     mapper3,
-    // mapper4,
+    mapper4,
     _,
 };
 
@@ -105,6 +110,7 @@ const MapperUnion = union(MapperTag) {
     mapper1: Mapper1,
     mapper2: Mapper2,
     mapper3: Mapper3,
+    mapper4: Mapper4,
 };
 
 const CrateMapperError = error{
@@ -128,6 +134,10 @@ fn createMapper(self: *Nes) !Mapper {
         3 => {
             self.mapperMem = MapperUnion{ .mapper3 = Mapper3.init(&self.rom) };
             return self.mapperMem.mapper3.toMapper();
+        },
+        4 => {
+            self.mapperMem = MapperUnion{ .mapper4 = Mapper4.init(&self.rom) };
+            return self.mapperMem.mapper4.toMapper();
         },
         else => {
             return CrateMapperError.MapperNotSupported;

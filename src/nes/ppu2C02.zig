@@ -10,6 +10,7 @@ ctrl: PPUCTRL = std.mem.zeroes(PPUCTRL),
 mask: PPUMASK = std.mem.zeroes(PPUMASK),
 status: PPUSTATUS = std.mem.zeroes(PPUSTATUS),
 nmiSend: bool = false,
+irqSend: bool = false,
 odd_frame: bool = false,
 
 nametable: [2048]u8 = undefined,
@@ -133,7 +134,7 @@ pub fn clock(self: *PPU, texture_data: [*]u8) !void {
     }
     // }
 
-    if (self.scanline == self.mapper.getNMIScanline() and self.cycle == 0) {
+    if (self.mapper.shouldIrq() and self.cycle == 0) {
         self.nmiSend = true;
     }
 

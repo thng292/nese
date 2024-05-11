@@ -25,7 +25,7 @@ pub fn init(rom: *ROM) Self {
 
 pub fn cpuRead(self: *Self, addr: u16) u8 {
     if (0x8000 <= addr) {
-        return self.rom.PRG_RomBanks[addr - self.start_addr];
+        return self.rom.PRG_Rom[addr - self.start_addr];
     }
     return 0;
 }
@@ -37,14 +37,14 @@ pub fn cpuWrite(self: *Self, addr: u16, data: u8) void {
 }
 
 pub fn ppuRead(self: *Self, addr: u16) u8 {
-    return self.rom.CHR_RomBanks[addr + @as(u16, self.chr_bank_select) * 0x2000];
+    return self.rom.CHR_Rom[addr + @as(u16, self.chr_bank_select) * 0x2000];
 }
 
 pub fn ppuWrite(self: *Self, addr: u16, data: u8) void {
     _ = self;
     _ = addr;
     _ = data;
-    // self.rom.CHR_RomBanks[addr] = data;
+    // self.rom.CHR_Rom[addr] = data;
 }
 
 pub fn resolveNametableAddr(self: *Self, addr: u16) u16 {
@@ -60,9 +60,9 @@ pub fn resolveNametableAddr(self: *Self, addr: u16) u16 {
     return nametable_num * 0x400 + ntindex;
 }
 
-pub fn getNMIScanline(self: *Self) u16 {
+pub fn shouldIrq(self: *Self) bool {
     _ = self;
-    return 400;
+    return false;
 }
 
 pub fn toMapper(self: *Self) mapperInterface {
