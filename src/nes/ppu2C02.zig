@@ -164,7 +164,7 @@ pub fn clock(self: *PPU, texture_data: [*]u8) !void {
         self.spriteEvaluate();
     }
 
-    if (self.mask.ShowSprite) blk: {
+    if (self.mask.ShowSprite and (self.cycle > 8 or self.mask.ShowSpriteInLM)) {
         for (&self.draw_list) |*sprite| {
             if (sprite.x != 0) {
                 sprite.x -%= 1;
@@ -175,9 +175,7 @@ pub fn clock(self: *PPU, texture_data: [*]u8) !void {
                 sprite.attribute.drawing = !sprite.attribute.drawing;
             }
         }
-        if (!self.mask.ShowSpriteInLM and self.cycle <= 8) {
-            break :blk;
-        }
+
         for (&self.draw_list) |*sprite| {
             if (!sprite.attribute.drawing) {
                 continue;
@@ -196,10 +194,6 @@ pub fn clock(self: *PPU, texture_data: [*]u8) !void {
                 self.status.SpriteZeroHit = sprite.attribute.spriteZero //
                 and self.cycle != 255 //
                 and (color_out_bg & pixel & 0b11) != 0;
-
-                // if (self.status.SpriteZeroHit) {
-                //     std.debug.print("Sprite Zero Hitted\n", .{});
-                // }
             }
             if (color_out_sprite & 0b11 == 0) {
                 color_out_sprite = pixel;

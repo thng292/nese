@@ -9,8 +9,8 @@ rom: *ROM,
 mirroring: Mirroring,
 no_bank8kb: u8,
 
-PRG_bank_offsets: [4]u16,
-CHR_bank_offsets: [8]u16 = std.mem.zeroes([8]u16),
+PRG_bank_offsets: [4]u32,
+CHR_bank_offsets: [8]u32 = std.mem.zeroes([8]u32),
 regs: [8]u8 = std.mem.zeroes([8]u8),
 
 PRG_bank_mode: bool = false,
@@ -32,7 +32,7 @@ pub fn init(rom: *ROM) Self {
         .rom = rom,
         .mirroring = if (rom.header.mirroring) .Vertical else .Horizontal,
         .no_bank8kb = no_bank8kb,
-        .PRG_bank_offsets = [4]u16{
+        .PRG_bank_offsets = [4]u32{
             0,
             BANK_8KB,
             (no_bank8kb - 2) * BANK_8KB,
@@ -48,7 +48,7 @@ pub fn cpuRead(self: *Self, addr: u16) u8 {
     const offset = addr - 0x8000;
     const PRG_Rom = self.rom.PRG_Rom;
     const bank = @divTrunc(offset, BANK_8KB);
-    return PRG_Rom[self.PRG_bank_offsets[bank] + offset];
+    return PRG_Rom[self.PRG_bank_offsets[bank] + (offset % BANK_8KB)];
 }
 
 inline fn isEven(num: u64) bool {
@@ -72,7 +72,7 @@ pub fn cpuWrite(self: *Self, addr: u16, data: u8) void {
         },
         0xA000...0xBFFF => {
             if (isEven(addr)) {
-                if (data & 1 == 1) {
+                if (data & 1 != 0) {
                     self.mirroring = .Horizontal;
                 } else {
                     self.mirroring = .Vertical;
@@ -100,7 +100,7 @@ pub fn cpuWrite(self: *Self, addr: u16, data: u8) void {
 pub fn ppuRead(self: *Self, addr: u16) u8 {
     const CHR_Rom = self.rom.CHR_Rom;
     const bank = @divTrunc(addr, BANK_1KB);
-    return CHR_Rom[self.CHR_bank_offsets[bank] + addr];
+    return CHR_Rom[self.CHR_bank_offsets[bank] + (addr % BANK_1KB)];
 }
 
 pub fn ppuWrite(self: *Self, addr: u16, data: u8) void {
@@ -170,9 +170,9 @@ pub fn toMapper(self: *Self) mapperInterface {
     return mapperInterface.toMapper(self);
 }
 
-const BANK_1KB: u16 = 0x0400;
-const BANK_2KB: u16 = BANK_1KB * 2;
-const BANK_4KB: u16 = BANK_2KB * 2;
-const BANK_8KB: u16 = BANK_4KB * 2;
-const BANK_16KB: u16 = BANK_8KB * 2;
-const BANK_32KB: u16 = BANK_16KB * 2;
+const BANK_1KB: u32 = 0x0400;
+const BANK_2KB: u32 = BANK_1KB * 2;
+const BANK_4KB: u32 = BANK_2KB * 2;
+const BANK_8KB: u32 = BANK_4KB * 2;
+const BANK_16KB: u32 = BANK_8KB * 2;
+const BANK_32KB: u32 = BANK_16KB * 2;

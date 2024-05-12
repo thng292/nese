@@ -8,6 +8,7 @@ rom: *ROM,
 
 cpu_bank_0: u8 = 0,
 cpu_bank_1: u8 = 0,
+cpu_bank_32k: u8 = 0,
 ppu_bank_0: u8 = 0,
 ppu_bank_1: u8 = 0,
 
@@ -48,7 +49,7 @@ pub fn cpuRead(self: *Self, addr: u16) u8 {
     }
     // 32KB mode
     return self.rom.PRG_Rom[
-        self.cpu_bank_0 * BANK_32KB + addr - start_addr
+        self.cpu_bank_0 * BANK_32KB + (addr - start_addr)
     ];
 }
 
