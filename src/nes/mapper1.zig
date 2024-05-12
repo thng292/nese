@@ -60,7 +60,7 @@ pub fn cpuWrite(self: *Self, addr: u16, data: u8) void {
     }
     if (data & 0x80 != 0) { // Reset
         self.shift_reg = 1;
-        self.control = @bitCast(data | 0x0C0);
+        self.control.PRG_bank_mode = .fix_last_bank;
         return;
     }
 
@@ -171,3 +171,21 @@ const BANK_4KB: u32 = 0x1000;
 const BANK_8KB: u32 = BANK_4KB * 2;
 const BANK_16KB: u32 = BANK_8KB * 2;
 const BANK_32KB: u32 = BANK_16KB * 2;
+
+test "ControlReg test 0" {
+    const expect = std.testing.expect;
+    const ctrl_reg: ControlReg = @bitCast(@as(u8, 0x1C));
+    try expect(ctrl_reg._pad == 0);
+    try expect(ctrl_reg.mirroring == .Single_lower);
+    try expect(ctrl_reg.PRG_bank_mode == .fix_last_bank);
+    try expect(ctrl_reg.ppu_switch_4kb == true);
+}
+
+test "ControlReg test 1" {
+    const expect = std.testing.expect;
+    const ctrl_reg: ControlReg = @bitCast(@as(u8, 0x1C));
+    try expect(ctrl_reg._pad == 0);
+    try expect(@intFromEnum(ctrl_reg.mirroring) == 0);
+    try expect(@intFromEnum(ctrl_reg.PRG_bank_mode) == 0b11);
+    try expect(ctrl_reg.ppu_switch_4kb == true);
+}
