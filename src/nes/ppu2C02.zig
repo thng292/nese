@@ -137,12 +137,6 @@ pub fn clock(self: *PPU, texture_data: [*]u8) !void {
     }
     // }
 
-    if (self.mask.ShowBG or self.mask.ShowSprite) {
-        if (self.cycle == 260 and self.scanline < 240) {
-            self.nmiSend = self.mapper.shouldIrq();
-        }
-    }
-
     // Draw
     var sprite_behind_bg = false;
     var color_out_sprite: u8 = 0;
@@ -201,6 +195,7 @@ pub fn clock(self: *PPU, texture_data: [*]u8) !void {
                 and self.cycle != 255 //
                 and (color_out_bg & pixel & 0b11) != 0;
             }
+
             if (color_out_sprite & 0b11 == 0) {
                 color_out_sprite = pixel;
                 sprite_behind_bg = sprite.attribute.behindBG;
@@ -224,6 +219,7 @@ pub fn clock(self: *PPU, texture_data: [*]u8) !void {
             color_out = color_out_sprite;
         }
     }
+
     // color_out = color_out_sprite;
     if (0 <= self.cycle - 1 and self.cycle - 1 < 256 and self.scanline <= 240) {
         const pixel = colors[self.internalRead(palette_offset + @as(u16, color_out))];
@@ -235,6 +231,13 @@ pub fn clock(self: *PPU, texture_data: [*]u8) !void {
     }
 
     self.cycle += 1;
+
+    if (self.mask.ShowBG or self.mask.ShowSprite) {
+        if (self.cycle == 260 and self.scanline < 240) {
+            self.nmiSend = self.mapper.shouldIrq();
+        }
+    }
+
     if (self.cycle >= 341) {
         self.cycle = 0;
         self.scanline += 1;
@@ -502,11 +505,15 @@ fn assignBGColor(self: *PPU, tmp: u16, data: u8) void {
     }
 }
 
-pub fn printNametable1(self: *PPU) !void {
+pub fn printNametable(self: *PPU, nametable: u16) !void {
     const stdout = std.io.getStdOut().writer();
     for (0..30) |y| {
         for (0..32) |x| {
-            try std.fmt.format(stdout, "{x:2} ", .{self.nametable[y * 32 + x]});
+            try std.fmt.format(
+                stdout,
+                "{x:2} ",
+                .{self.nametable[(nametable * 0x400 + y * 32 + x) % self.nametable.len]},
+            );
         }
         try std.fmt.format(stdout, "\n", .{});
     }
@@ -556,8 +563,17 @@ pub fn printPPUDebug(self: *PPU) void {
             .attribute = self.oam[i + 2],
         });
     }
-    std.debug.print("OAM==========================================\n", .{});
-    self.printNametable1() catch {};
+    std.debug.print("Nametable 2000===============================\n", .{});
+    self.printNametable(0) catch {};
+
+    std.debug.print("Nametable 2400===============================\n", .{});
+    self.printNametable(1) catch {};
+
+    std.debug.print("Nametable 2800===============================\n", .{});
+    self.printNametable(2) catch {};
+
+    std.debug.print("Nametable 2C00===============================\n", .{});
+    self.printNametable(3) catch {};
 }
 
 const tmp_color = [_]sdl.Color{

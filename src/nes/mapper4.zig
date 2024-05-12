@@ -18,7 +18,7 @@ CHR_inversion: bool = false,
 target_reg: u3 = 0,
 
 irq_latch: u8 = 0,
-irq_reload: u8 = 0,
+irq_counter: u8 = 0,
 irq_enable: bool = false,
 
 const Mirroring = enum(u1) {
@@ -33,8 +33,8 @@ pub fn init(rom: *ROM) Self {
         .mirroring = if (rom.header.mirroring) .Vertical else .Horizontal,
         .no_bank8kb = no_bank8kb,
         .PRG_bank_offsets = [4]u32{
-            0,
-            BANK_8KB,
+            0 * BANK_8KB,
+            1 * BANK_8KB,
             (no_bank8kb - 2) * BANK_8KB,
             (no_bank8kb - 1) * BANK_8KB,
         },
@@ -60,39 +60,30 @@ pub fn cpuWrite(self: *Self, addr: u16, data: u8) void {
         self.rom.PRG_Ram[addr - 0x6000] = data;
     }
     switch (addr) {
-        0x8000...0x9FFF => {
-            if (isEven(addr)) {
-                self.target_reg = @truncate(data & 0b111);
-                self.PRG_bank_mode = (data & 0x40) != 0;
-                self.CHR_inversion = (data & 0x80) != 0;
-            } else {
-                self.regs[self.target_reg] = data;
-                self.updateOffsetTable();
+        0x8000...0x9FFF => if (isEven(addr)) {
+            self.target_reg = @truncate(data & 0b111);
+            self.PRG_bank_mode = (data & 0x40) != 0;
+            self.CHR_inversion = (data & 0x80) != 0;
+        } else {
+            self.regs[self.target_reg] = data;
+            if (self.target_reg == 0 or self.target_reg == 1) {
+                self.regs[self.target_reg] &= 0xFE;
             }
+            self.updateOffsetTable();
         },
-        0xA000...0xBFFF => {
-            if (isEven(addr)) {
-                if (data & 1 != 0) {
-                    self.mirroring = .Horizontal;
-                } else {
-                    self.mirroring = .Vertical;
-                }
-            } else {}
-        },
-        0xC000...0xDFFF => {
-            if (isEven(addr)) {
-                self.irq_latch = data;
+        0xA000...0xBFFF => if (isEven(addr)) {
+            if (data & 1 == 0) {
+                self.mirroring = .Vertical;
             } else {
-                self.irq_reload = data;
+                self.mirroring = .Horizontal;
             }
+        } else {},
+        0xC000...0xDFFF => if (isEven(addr)) {
+            self.irq_latch = data;
+        } else {
+            self.irq_counter = 0;
         },
-        0xE000...0xFFFF => {
-            if (isEven(addr)) {
-                self.irq_enable = false;
-            } else {
-                self.irq_enable = true;
-            }
-        },
+        0xE000...0xFFFF => self.irq_enable = !isEven(addr),
         else => {},
     }
 }
@@ -121,16 +112,13 @@ pub fn resolveNametableAddr(self: *Self, addr: u16) u16 {
 }
 
 pub fn shouldIrq(self: *Self) bool {
-    if (self.irq_latch == 0) {
-        self.irq_latch = self.irq_reload;
+    if (self.irq_counter == 0) {
+        self.irq_counter = self.irq_latch;
     } else {
-        self.irq_latch -= 1;
+        self.irq_counter -= 1;
     }
 
-    if (self.irq_latch == 0 and self.irq_enable) {
-        return true;
-    }
-    return false;
+    return self.irq_counter == 0 and self.irq_enable;
 }
 
 inline fn updateOffsetTable(self: *Self) void {
@@ -154,13 +142,12 @@ inline fn updateOffsetTable(self: *Self) void {
         self.CHR_bank_offsets[7] = self.regs[5] * BANK_1KB;
     }
 
-    // Mult by 2 bc the PRG_ROM_Size is mult by 16k, we need 8k
     if (self.PRG_bank_mode) {
-        self.PRG_bank_offsets[2] = (self.regs[6] & 0x3F) * BANK_8KB;
         self.PRG_bank_offsets[0] = (self.no_bank8kb - 2) * BANK_8KB;
+        self.PRG_bank_offsets[2] = (self.regs[6] & 0x3F) * BANK_8KB;
     } else {
-        self.PRG_bank_offsets[2] = (self.no_bank8kb - 2) * BANK_8KB;
         self.PRG_bank_offsets[0] = (self.regs[6] & 0x3F) * BANK_8KB;
+        self.PRG_bank_offsets[2] = (self.no_bank8kb - 2) * BANK_8KB;
     }
     self.PRG_bank_offsets[1] = (self.regs[7] & 0x3F) * BANK_8KB;
     self.PRG_bank_offsets[3] = (self.no_bank8kb - 1) * BANK_8KB;

@@ -35,7 +35,7 @@ pub const Bus = struct {
                 const dma_addr = @as(u16, data) << 8;
                 for (0..256) |ii| {
                     const i: u16 = @truncate(ii);
-                    self.ppu.oam[i] = self.ram.read(i + dma_addr);
+                    self.ppu.oam[i] = self.read(i + dma_addr);
                 }
             },
             0x4016 => self.control.write(addr, data),

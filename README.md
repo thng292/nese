@@ -70,6 +70,7 @@ nese [path-to-ines-file]
 - Mapper 1
 - Mapper 2
 - Mapper 3
+- Mapper 4 (Very buggy, idk why)
 
 ## How to build
 
