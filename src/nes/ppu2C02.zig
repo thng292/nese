@@ -48,19 +48,23 @@ pub fn init(mapper: Mapper) !PPU {
 }
 
 pub fn clock(self: *PPU, texture_data: [*]u8) !void {
+    if (self.cycle == 0) {
+        self.spriteEvaluate();
+    }
+
+    if (self.scanline == 0 and self.cycle == 0) {
+        self.texture_pixel_count = 0;
+        if (self.odd_frame) {
+            self.cycle = 1;
+        }
+        self.odd_frame = !self.odd_frame;
+    }
+
+    if (self.scanline == -1 and self.cycle == 1) {
+        self.status = std.mem.zeroes(PPUSTATUS);
+    }
+
     if (self.scanline >= -1 and self.scanline < 240) {
-        if (self.scanline == 0 and self.cycle == 0) {
-            self.texture_pixel_count = 0;
-            if (self.odd_frame) {
-                self.cycle = 1;
-            }
-            self.odd_frame = !self.odd_frame;
-        }
-
-        if (self.scanline == -1 and self.cycle == 1) {
-            self.status = std.mem.zeroes(PPUSTATUS);
-        }
-
         if ((self.cycle >= 2 and self.cycle < 258) //
         or (self.cycle >= 321 and self.cycle < 338)) {
             self.UpdateShifter();
@@ -115,13 +119,12 @@ pub fn clock(self: *PPU, texture_data: [*]u8) !void {
             const vreg: u16 = @bitCast(self.vreg);
             self.bg_next_title_id = self.internalRead(0x2000 | (vreg & 0x0FFF));
         }
-
-        if (self.scanline == -1 and self.cycle >= 280 and self.cycle < 305) {
-            if (self.mask.ShowBG or self.mask.ShowSprite) {
-                self.vreg.fine_y = self.treg.fine_y;
-                self.vreg.coarse_y = self.treg.coarse_y;
-                self.vreg.nametable_y = self.treg.nametable_y;
-            }
+    }
+    if (self.scanline == -1 and self.cycle >= 280 and self.cycle < 305) {
+        if (self.mask.ShowBG or self.mask.ShowSprite) {
+            self.vreg.fine_y = self.treg.fine_y;
+            self.vreg.coarse_y = self.treg.coarse_y;
+            self.vreg.nametable_y = self.treg.nametable_y;
         }
     }
 
@@ -134,8 +137,10 @@ pub fn clock(self: *PPU, texture_data: [*]u8) !void {
     }
     // }
 
-    if (self.mapper.shouldIrq() and self.cycle == 0) {
-        self.nmiSend = true;
+    if (self.mask.ShowBG or self.mask.ShowSprite) {
+        if (self.cycle == 260 and self.scanline < 240) {
+            self.nmiSend = self.mapper.shouldIrq();
+        }
     }
 
     // Draw
@@ -160,15 +165,16 @@ pub fn clock(self: *PPU, texture_data: [*]u8) !void {
         color_out_bg = pixel;
     }
 
-    if (self.cycle == 0) {
-        self.spriteEvaluate();
-    }
-
     if (self.mask.ShowSprite and (self.cycle > 8 or self.mask.ShowSpriteInLM)) {
         for (&self.draw_list) |*sprite| {
             if (sprite.x != 0) {
                 sprite.x -%= 1;
             } else {
+                if (sprite.attribute.isAt255) {
+                    sprite.x = 255;
+                    sprite.attribute.isAt255 = false;
+                    continue;
+                }
                 if (sprite.attribute.drawing == false) {
                     sprite.x = 8;
                 }
@@ -342,6 +348,7 @@ inline fn spriteEvaluate(self: *PPU) void {
         currentSprite.shifter_hi = self.internalRead(addr + 8);
         currentSprite.attribute.spriteZero = i == 0;
         currentSprite.attribute.drawing = false;
+        currentSprite.attribute.isAt255 = self.oam[i + 3] == 255;
         currentSprite.x = self.oam[i + 3] +% 1;
         if (currentSprite.attribute.flip_horizontal) {
             currentSprite.shifter_lo = @bitReverse(currentSprite.shifter_lo);
@@ -619,7 +626,7 @@ const SpriteAttribute = packed struct(u8) {
     palette: u2 = 0,
     spriteZero: bool = false,
     drawing: bool = false,
-    _zero: u1 = 0,
+    isAt255: bool = false,
     behindBG: bool = false,
     flip_horizontal: bool = false,
     flip_vertical: bool = false,
