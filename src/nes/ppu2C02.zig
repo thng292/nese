@@ -194,6 +194,12 @@ pub fn clock(self: *PPU, texture_data: [*]u8) !void {
                 self.status.SpriteZeroHit = sprite.attribute.spriteZero //
                 and self.cycle != 255 //
                 and (color_out_bg & pixel & 0b11) != 0;
+                // if (self.status.SpriteZeroHit == true) {
+                //     std.debug.print(
+                //         "Sprite zero hit @{}:{}\n",
+                //         .{ self.scanline, self.cycle },
+                //     );
+                // }
             }
 
             if (color_out_sprite & 0b11 == 0) {
@@ -222,7 +228,9 @@ pub fn clock(self: *PPU, texture_data: [*]u8) !void {
 
     // color_out = color_out_sprite;
     if (0 <= self.cycle - 1 and self.cycle - 1 < 256 and self.scanline <= 240) {
-        const pixel = colors[self.internalRead(palette_offset + @as(u16, color_out))];
+        const pixel = colors[
+            self.internalRead(palette_offset + @as(u16, color_out))
+        ];
         texture_data[self.texture_pixel_count + 3] = pixel.r;
         texture_data[self.texture_pixel_count + 2] = pixel.g;
         texture_data[self.texture_pixel_count + 1] = pixel.b;
@@ -399,7 +407,7 @@ pub fn write(self: *PPU, addr: u16, data: u8) void {
             self.treg.nametable_y = self.ctrl.nametable_y;
         },
         0x2001 => self.mask = @bitCast(data),
-        0x2003 => self.oam_addr = data, // OAM SHIT
+        0x2003 => self.oam_addr = data,
         0x2004 => {
             self.oam[self.oam_addr] = data;
             self.oam_addr +%= 1;
@@ -528,7 +536,10 @@ fn printStruct(struc: anytype) void {
 }
 
 fn printColor(value: u8, color: sdl.Color) void {
-    std.debug.print("{X:0>2}: #{X:0>2}{X:0>2}{X:0>2}\n", .{ value, color.r, color.g, color.b });
+    std.debug.print(
+        "{X:0>2}: #{X:0>2}{X:0>2}{X:0>2}\n",
+        .{ value, color.r, color.g, color.b },
+    );
 }
 
 pub fn printPPUDebug(self: *PPU) void {
@@ -550,18 +561,18 @@ pub fn printPPUDebug(self: *PPU) void {
     std.debug.print("MASK:\n", .{});
     printStruct(self.mask);
 
-    std.debug.print("STATUS:\n", .{});
-    printStruct(self.status);
-
     std.debug.print("OAM==========================================\n", .{});
     var i: u16 = 0;
     while (i < 256) : (i += 4) {
-        std.debug.print("{{x: {: >3}, y: {: >3}, id: {X:0>2}, attr: {b:0>8}}}\n", .{
-            .x = self.oam[i + 3],
-            .y = self.oam[i + 0],
-            .id = self.oam[i + 1],
-            .attribute = self.oam[i + 2],
-        });
+        std.debug.print(
+            "{{x: {: >3}, y: {: >3}, id: {X:0>2}, attr: {b:0>8}}}\n",
+            .{
+                .x = self.oam[i + 3],
+                .y = self.oam[i + 0],
+                .id = self.oam[i + 1],
+                .attribute = self.oam[i + 2],
+            },
+        );
     }
     std.debug.print("Nametable 2000===============================\n", .{});
     self.printNametable(0) catch {};

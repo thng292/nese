@@ -24,8 +24,9 @@ pub fn main() !void {
     const out = std.io.getStdOut();
     defer out.close();
 
+    std.debug.print("{}\n", .{@src().line});
     try sdl.init(sdl.InitFlags.everything);
-    // defer sdl.quit();
+    defer sdl.quit();
 
     const main_wind = try Window.create(
         rom_name.?,
@@ -33,6 +34,8 @@ pub fn main() !void {
         base_screen_h * scale,
     );
     defer main_wind.destroy();
+
+    std.debug.print("{}\n", .{@src().line});
 
     const audio_spec: sdl.AudioSpec = sdl.AudioSpec{
         .channels = 1,
@@ -55,8 +58,14 @@ pub fn main() !void {
         std.debug.print("Failed to init audio: {?s}\n", .{SDL_GetError()});
     }
 
-    var apu = try APU.init(std.heap.page_allocator, audio_dev_id, audio_spec);
+    var apu = try APU.init(
+        std.heap.page_allocator,
+        audio_dev_id,
+        audio_spec,
+    );
     defer apu.deinit();
+
+    std.debug.print("{}\n", .{@src().line});
 
     const destiation_rect = sdl.Rect{
         .x = 0,
@@ -120,6 +129,8 @@ pub fn main() !void {
     var screen: Screen = .RunningGame;
     var step = false;
     var fast_forward = false;
+
+    std.debug.print("{}\n", .{@src().line});
 
     const frame_deadline = @as(f64, 1000) / 60;
     var start = sdl.getPerformanceCounter();
