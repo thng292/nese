@@ -108,8 +108,8 @@ pub const ROM = struct {
             save_path ++ "{X:0>8}.bin",
             .{hashed},
         );
-        const save_file = std.fs.cwd().openFile(save_file_path, .{});
-        if (save_file) |ff| {
+        defer allocator.free(save_file_path);
+        if (std.fs.cwd().openFile(save_file_path, .{})) |ff| {
             _ = try ff.readAll(self.PRG_Ram);
             ff.close();
         } else |_| {}

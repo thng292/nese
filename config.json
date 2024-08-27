@@ -1,0 +1,8 @@
+{
+    "scale": 2e0,
+    "input_fps": 400,
+    "emulation_speed": 100,
+    "save_path": "./save",
+    "game_path": null,
+    "show_metric": true
+}

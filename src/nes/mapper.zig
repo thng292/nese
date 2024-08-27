@@ -11,13 +11,13 @@ pub const MapperTag = enum(u8) {
 };
 
 const Mapper = @This();
-context: *void,
-cpu_read_fn: *const fn (context: *void, addr: u16) u8,
-cpu_write_fn: *const fn (context: *void, addr: u16, data: u8) void,
-ppu_read_fn: *const fn (context: *void, addr: u16) u8,
-ppu_write_fn: *const fn (context: *void, addr: u16, data: u8) void,
-resolve_nametable_addr_fn: *const fn (context: *void, addr: u16) u16,
-should_irq_fn: *const fn (context: *void) bool,
+context: *anyopaque,
+cpu_read_fn: *const fn (context: *anyopaque, addr: u16) u8,
+cpu_write_fn: *const fn (context: *anyopaque, addr: u16, data: u8) void,
+ppu_read_fn: *const fn (context: *anyopaque, addr: u16) u8,
+ppu_write_fn: *const fn (context: *anyopaque, addr: u16, data: u8) void,
+resolve_nametable_addr_fn: *const fn (context: *anyopaque, addr: u16) u16,
+should_irq_fn: *const fn (context: *anyopaque) bool,
 
 pub inline fn cpuRead(self: *Mapper, addr: u16) u8 {
     return self.cpu_read_fn(self.context, addr);
@@ -50,32 +50,32 @@ pub fn toMapper(ptr: anytype) Mapper {
     assert(@typeInfo(@typeInfo(Ptr).Pointer.child) == .Struct); // Must point to a struct
     const T = @TypeOf(ptr);
     const anon = struct {
-        pub fn cpuRead(context: *void, address: u16) u8 {
+        pub fn cpuRead(context: *anyopaque, address: u16) u8 {
             const tmp: T = @alignCast(@ptrCast(context));
             return tmp.cpuRead(address);
         }
 
-        pub fn cpuWrite(context: *void, address: u16, data: u8) void {
+        pub fn cpuWrite(context: *anyopaque, address: u16, data: u8) void {
             const tmp: T = @alignCast(@ptrCast(context));
             return tmp.cpuWrite(address, data);
         }
 
-        pub fn ppuRead(context: *void, address: u16) u8 {
+        pub fn ppuRead(context: *anyopaque, address: u16) u8 {
             const tmp: T = @alignCast(@ptrCast(context));
             return tmp.ppuRead(address);
         }
 
-        pub fn ppuWrite(context: *void, address: u16, data: u8) void {
+        pub fn ppuWrite(context: *anyopaque, address: u16, data: u8) void {
             const tmp: T = @alignCast(@ptrCast(context));
             return tmp.ppuWrite(address, data);
         }
 
-        pub fn resolveNametableAddr(context: *void, address: u16) u16 {
+        pub fn resolveNametableAddr(context: *anyopaque, address: u16) u16 {
             const tmp: T = @alignCast(@ptrCast(context));
             return tmp.resolveNametableAddr(address);
         }
 
-        pub fn shouldIrq(context: *void) bool {
+        pub fn shouldIrq(context: *anyopaque) bool {
             const tmp: T = @alignCast(@ptrCast(context));
             return tmp.shouldIrq();
         }
@@ -112,7 +112,7 @@ test "To Mapper Interface" {
         }
 
         pub fn shouldIrq(_: *Self) bool {
-            return 0;
+            return false;
         }
     };
 

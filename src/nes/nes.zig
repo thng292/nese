@@ -1,5 +1,6 @@
 const std = @import("std");
-const sdl = @import("zsdl");
+const zglfw = @import("zglfw");
+const zgpu = @import("zgpu");
 
 const Bus = @import("bus.zig").Bus;
 const CPU = @import("cpu6502.zig");
@@ -18,21 +19,52 @@ const Mapper4 = @import("mapper4.zig");
 
 const Nes = @This();
 const dot_per_frame = 341 * 262;
+const channel = 4;
+pub const SCREEN_SIZE = .{ .width = 256, .height = 240 };
 
 rom: Rom = undefined,
 cpu: CPU = undefined,
 bus: Bus = undefined,
 mapperMem: MapperUnion = undefined,
 counter: u64 = 0,
+gctx: *zgpu.GraphicsContext,
+screen_texture_handle: zgpu.TextureHandle,
+screen_texture_view_handle: zgpu.TextureViewHandle,
+texture_data: []u8,
+allocator: std.mem.Allocator,
 
-pub inline fn init(allocator: std.mem.Allocator, rom_file: std.fs.File) !Nes {
+pub fn init(allocator: std.mem.Allocator, rom_file: std.fs.File, gctx: *zgpu.GraphicsContext) !Nes {
+    const texture_handle = gctx.createTexture(.{
+        .format = zgpu.imageInfoToTextureFormat(4, 1, false),
+        .size = .{
+            .width = SCREEN_SIZE.width,
+            .height = SCREEN_SIZE.height,
+            .depth_or_array_layers = 1,
+        },
+        .usage = .{ .copy_dst = true, .texture_binding = true },
+        .mip_level_count = 1,
+    });
+    const texture_view = gctx.createTextureView(texture_handle, .{});
+    std.log.info("Created screen texture\n", .{});
+
     return Nes{
+        .allocator = allocator,
         .rom = try Rom.readFromFile(rom_file, allocator),
+        .gctx = gctx,
+        .screen_texture_handle = texture_handle,
+        .screen_texture_view_handle = texture_view,
+        .texture_data = try allocator.alloc(u8, SCREEN_SIZE.width * SCREEN_SIZE.height * channel),
     };
 }
 
+pub fn deinit(self: *Nes) void {
+    self.rom.deinit();
+    self.allocator.free(self.texture_data);
+    self.gctx.destroyResource(self.screen_texture_handle);
+}
+
 pub fn startup(self: *Nes, apu: APU) !void {
-    std.debug.print("ROM Info: \n{}\n", .{self.rom.header});
+    std.log.info("ROM Info: {}\n", .{self.rom.header});
     const mapper = try self.createMapper();
     self.bus = Bus{
         .mapper = mapper,
@@ -40,14 +72,14 @@ pub fn startup(self: *Nes, apu: APU) !void {
         .ppu = try PPU.init(mapper),
         .control = Control{
             .controller2 = .{
-                .Up = sdl.Keycode.up,
-                .Down = sdl.Keycode.down,
-                .Left = sdl.Keycode.left,
-                .Right = sdl.Keycode.right,
-                .A = sdl.Keycode.j,
-                .B = sdl.Keycode.k,
-                .Start = sdl.Keycode.slash,
-                .Select = sdl.Keycode.l,
+                .Up = .up,
+                .Down = .down,
+                .Left = .left,
+                .Right = .right,
+                .A = .j,
+                .B = .k,
+                .Start = .slash,
+                .Select = .l,
             },
         },
         .apu = apu,
@@ -58,43 +90,49 @@ pub fn startup(self: *Nes, apu: APU) !void {
     self.cpu.reset();
 }
 
-pub fn deinit(self: *Nes) void {
-    self.rom.deinit();
+pub fn handleKey(self: *Nes, window: *zglfw.Window) void {
+    self.bus.control.handleKeyEvent(window);
 }
 
-pub fn handleKey(self: *Nes, event: sdl.Event) void {
-    switch (event.type) {
-        .keydown => self.bus.control.handleKeyDownEvent(event),
-        .keyup => self.bus.control.handleKeyUpEvent(event),
-        else => {},
+fn clock(self: *Nes) void {
+    try self.bus.ppu.clock(self.texture_data);
+    if (self.counter % 3 == 0) {
+        try self.cpu.step();
     }
+    if (self.bus.ppu.nmiSend) {
+        self.bus.ppu.nmiSend = false;
+        self.bus.nmiSet = true;
+    }
+    if (self.bus.ppu.irqSend) {
+        self.bus.ppu.irqSend = false;
+        self.bus.irqSet = true;
+    }
+    self.counter +%= 1;
 }
 
-pub fn runFrame(self: *Nes, game_screen: *sdl.Texture) !void {
-    const data = try game_screen.lock(null);
-    defer game_screen.unlock();
+pub fn runFrame(self: *Nes) !zgpu.wgpu.TextureView {
     for (0..dot_per_frame) |_| {
-        try self.bus.ppu.clock(data.pixels);
-        if (self.counter % 3 == 0) {
-            try self.cpu.step();
-        }
-        if (self.bus.ppu.nmiSend) {
-            self.bus.ppu.nmiSend = false;
-            self.bus.nmiSet = true;
-        }
-        if (self.bus.ppu.irqSend) {
-            self.bus.ppu.irqSend = false;
-            self.bus.irqSet = true;
-        }
-        self.counter +%= 1;
+        self.clock();
     }
-}
 
-pub fn draw_CHR(self: *Nes, game_screen: *sdl.Texture) !void {
-    const data = try game_screen.lock(null);
-    defer game_screen.unlock();
-    self.bus.ppu.draw_chr(data.pixels);
+    self.gctx.queue.writeTexture(
+        .{ .texture = self.gctx.lookupResource(self.screen_texture_handle).? },
+        .{
+            .bytes_per_row = SCREEN_SIZE.width * channel,
+            .rows_per_image = SCREEN_SIZE.height,
+        },
+        .{ .width = SCREEN_SIZE.width, .height = SCREEN_SIZE.height },
+        u8,
+        self.texture_data,
+    );
+    return self.gctx.lookupResource(self.screen_texture_view_handle).?;
 }
+//
+// pub fn draw_CHR(self: *Nes, game_screen: *sdl.Texture) !void {
+//     const data = try game_screen.lock(null);
+//     defer game_screen.unlock();
+//     self.bus.ppu.draw_chr(data.pixels);
+// }
 
 const MapperTag = enum(u8) {
     mapper0,

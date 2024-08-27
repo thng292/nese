@@ -1,54 +1,43 @@
 const std = @import("std");
-const sdl = @import("zsdl");
+const zglfw = @import("zglfw");
 
 pub const ControllerMap = struct {
     state: u8 = 0,
     buffer: u8 = 0,
-    A: sdl.Keycode = @enumFromInt(' '),
-    B: sdl.Keycode = sdl.Keycode.lshift,
-    Select: sdl.Keycode = sdl.Keycode.lctrl,
-    Start: sdl.Keycode = @enumFromInt('e'),
-    Up: sdl.Keycode = @enumFromInt('w'),
-    Down: sdl.Keycode = @enumFromInt('s'),
-    Left: sdl.Keycode = @enumFromInt('a'),
-    Right: sdl.Keycode = @enumFromInt('d'),
+    A: zglfw.Key = .space,
+    B: zglfw.Key = .left_shift,
+    Select: zglfw.Key = .left_control,
+    Start: zglfw.Key = .e,
+    Up: zglfw.Key = .w,
+    Down: zglfw.Key = .s,
+    Left: zglfw.Key = .a,
+    Right: zglfw.Key = .d,
 
     pub inline fn updateState(self: *ControllerMap) void {
         self.state = self.buffer;
     }
 
-    pub inline fn handleKeyDown(self: *ControllerMap, key: sdl.Keycode) void {
-        var bit: u4 = 0xF;
-        if (key == self.A) bit = 7;
-        if (key == self.B) bit = 6;
-        if (key == self.Select) bit = 5;
-        if (key == self.Start) bit = 4;
-        if (key == self.Up) bit = 3;
-        if (key == self.Down) bit = 2;
-        if (key == self.Left) bit = 1;
-        if (key == self.Right) bit = 0;
+    pub inline fn handleKey(self: *ControllerMap, window: *zglfw.Window) void {
+        var mask: u8 = 0;
+        if (window.getKey(self.A) == .press) mask |= 0x80;
+        if (window.getKey(self.B) == .press) mask |= 0x40;
+        if (window.getKey(self.Select) == .press) mask |= 0x20;
+        if (window.getKey(self.Start) == .press) mask |= 0x10;
+        if (window.getKey(self.Up) == .press) mask |= 0x08;
+        if (window.getKey(self.Down) == .press) mask |= 0x04;
+        if (window.getKey(self.Left) == .press) mask |= 0x02;
+        if (window.getKey(self.Right) == .press) mask |= 0x01;
 
-        if (bit != 0xF) {
-            const mask: u8 = 1;
-            self.buffer |= mask << @truncate(bit);
-        }
-    }
+        if (window.getKey(self.A) == .release) mask &= (0xFF ^ 0x80);
+        if (window.getKey(self.B) == .release) mask &= (0xFF ^ 0x40);
+        if (window.getKey(self.Select) == .release) mask &= (0xFF ^ 0x20);
+        if (window.getKey(self.Start) == .release) mask &= (0xFF ^ 0x10);
+        if (window.getKey(self.Up) == .release) mask &= (0xFF ^ 0x08);
+        if (window.getKey(self.Down) == .release) mask &= (0xFF ^ 0x04);
+        if (window.getKey(self.Left) == .release) mask &= (0xFF ^ 0x02);
+        if (window.getKey(self.Right) == .release) mask &= (0xFF ^ 0x01);
 
-    pub inline fn handleKeyUp(self: *ControllerMap, key: sdl.Keycode) void {
-        var bit: u4 = 0xF;
-        if (key == self.A) bit = 7;
-        if (key == self.B) bit = 6;
-        if (key == self.Select) bit = 5;
-        if (key == self.Start) bit = 4;
-        if (key == self.Up) bit = 3;
-        if (key == self.Down) bit = 2;
-        if (key == self.Left) bit = 1;
-        if (key == self.Right) bit = 0;
-
-        if (bit != 0xF) {
-            const mask: u8 = 1;
-            self.buffer &= 0xFF ^ (mask << @truncate(bit));
-        }
+        self.buffer = mask;
     }
 };
 
@@ -70,12 +59,7 @@ pub inline fn write(self: *Control, _: u16, data: u8) void {
     }
 }
 
-pub inline fn handleKeyDownEvent(self: *Control, event: sdl.Event) void {
-    self.controller1.handleKeyDown(event.key.keysym.sym);
-    self.controller2.handleKeyDown(event.key.keysym.sym);
-}
-
-pub inline fn handleKeyUpEvent(self: *Control, event: sdl.Event) void {
-    self.controller1.handleKeyUp(event.key.keysym.sym);
-    self.controller2.handleKeyUp(event.key.keysym.sym);
+pub inline fn handleKeyEvent(self: *Control, window: *zglfw.Window) void {
+    self.controller1.handleKey(window);
+    self.controller2.handleKey(window);
 }

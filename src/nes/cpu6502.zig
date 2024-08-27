@@ -573,8 +573,8 @@ inline fn BIT(self: *CPU, addr_mode: u8, cam_res: AMRes) u8 {
         am_res.res = self.bus.read(am_res.addr);
     }
     self.status.zero = if (self.a & am_res.res == 0) 1 else 0;
-    self.status.overflow = if (am_res.res & 0b0100_0000 != 0) 1 else 0;
-    self.status.negative = if (am_res.res & 0b1000_0000 != 0) 1 else 0;
+    self.status.overflow = if (am_res.res & 0x40 != 0) 1 else 0;
+    self.status.negative = if (am_res.res & 0x80 != 0) 1 else 0;
     const instruction_cycle = [8]u8{ 0, 3, 0, 4, 0, 0, 0, 0 };
     return instruction_cycle[addr_mode];
 }

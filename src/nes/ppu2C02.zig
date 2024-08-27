@@ -1,7 +1,8 @@
 const std = @import("std");
-const sdl = @import("zsdl");
 const Mapper = @import("mapper.zig");
 const Rom = @import("ines.zig").ROM;
+const zgpu = @import("zgpu");
+const wgpu = zgpu.wgpu;
 
 const PPU = @This();
 mapper: Mapper,
@@ -41,13 +42,20 @@ bg_next_title_lsb: u8 = 0,
 bg_next_title_msb: u8 = 0,
 bg_next_title_attrib: u8 = 0,
 
+const Color = struct {
+    r: u8 = 0,
+    g: u8 = 0,
+    b: u8 = 0,
+    a: u8 = 0,
+};
+
 pub fn init(mapper: Mapper) !PPU {
     return PPU{
         .mapper = mapper,
     };
 }
 
-pub fn clock(self: *PPU, texture_data: [*]u8) !void {
+pub fn clock(self: *PPU, texture_data: []u8) !void {
     if (self.cycle == 0) {
         self.spriteEvaluate();
     }
@@ -227,7 +235,7 @@ pub fn clock(self: *PPU, texture_data: [*]u8) !void {
     }
 
     // color_out = color_out_sprite;
-    if (0 <= self.cycle - 1 and self.cycle - 1 < 256 and self.scanline <= 240) {
+    if (0 <= self.cycle - 1 and self.cycle - 1 < 256 and self.scanline >= -1 and self.scanline < 239) {
         const pixel = colors[
             self.internalRead(palette_offset + @as(u16, color_out))
         ];
@@ -535,7 +543,7 @@ fn printStruct(struc: anytype) void {
     std.debug.print("}}\n", .{});
 }
 
-fn printColor(value: u8, color: sdl.Color) void {
+fn printColor(value: u8, color: Color) void {
     std.debug.print(
         "{X:0>2}: #{X:0>2}{X:0>2}{X:0>2}\n",
         .{ value, color.r, color.g, color.b },
@@ -587,14 +595,14 @@ pub fn printPPUDebug(self: *PPU) void {
     self.printNametable(3) catch {};
 }
 
-const tmp_color = [_]sdl.Color{
+const tmp_color = [_]Color{
     .{ .r = 0, .g = 0, .b = 0, .a = 255 },
     .{ .r = 84, .g = 13, .b = 110, .a = 255 },
     .{ .r = 238, .g = 66, .b = 102, .a = 255 },
     .{ .r = 255, .g = 210, .b = 63, .a = 255 },
 };
 
-pub fn draw_chr(self: *PPU, texture_data: [*]u8) void {
+pub fn draw_chr(self: *PPU, texture_data: []u8) void {
     // Draw first pattern table
     var x: u16 = 0;
     var y: u8 = 0;
@@ -619,7 +627,7 @@ pub fn draw_chr(self: *PPU, texture_data: [*]u8) void {
     }
 }
 
-fn draw_sprite(self: *PPU, spriteNum: u16, x: u8, y: u8, texture_data: [*]u8) void {
+fn draw_sprite(self: *PPU, spriteNum: u16, x: u8, y: u8, texture_data: []u8) void {
     var addr: u16 = spriteNum * 16;
     var xx: u32 = 0;
     var yy: u32 = 0;
@@ -697,72 +705,72 @@ const PPUSTATUS = packed struct(u8) {
     VBlank: bool,
 };
 
-const colors = [_]sdl.Color{
-    sdl.Color{ .r = 84, .g = 84, .b = 84, .a = 255 },
-    sdl.Color{ .r = 0, .g = 30, .b = 116, .a = 255 },
-    sdl.Color{ .r = 8, .g = 16, .b = 144, .a = 255 },
-    sdl.Color{ .r = 48, .g = 0, .b = 136, .a = 255 },
-    sdl.Color{ .r = 68, .g = 0, .b = 100, .a = 255 },
-    sdl.Color{ .r = 92, .g = 0, .b = 48, .a = 255 },
-    sdl.Color{ .r = 84, .g = 4, .b = 0, .a = 255 },
-    sdl.Color{ .r = 60, .g = 24, .b = 0, .a = 255 },
-    sdl.Color{ .r = 32, .g = 42, .b = 0, .a = 255 },
-    sdl.Color{ .r = 8, .g = 58, .b = 0, .a = 255 },
-    sdl.Color{ .r = 0, .g = 64, .b = 0, .a = 255 },
-    sdl.Color{ .r = 0, .g = 60, .b = 0, .a = 255 },
-    sdl.Color{ .r = 0, .g = 50, .b = 60, .a = 255 },
-    sdl.Color{ .r = 0, .g = 0, .b = 0, .a = 255 },
-    sdl.Color{ .r = 0, .g = 0, .b = 0, .a = 255 },
-    sdl.Color{ .r = 0, .g = 0, .b = 0, .a = 255 },
+const colors = [_]Color{
+    Color{ .r = 84, .g = 84, .b = 84, .a = 255 },
+    Color{ .r = 0, .g = 30, .b = 116, .a = 255 },
+    Color{ .r = 8, .g = 16, .b = 144, .a = 255 },
+    Color{ .r = 48, .g = 0, .b = 136, .a = 255 },
+    Color{ .r = 68, .g = 0, .b = 100, .a = 255 },
+    Color{ .r = 92, .g = 0, .b = 48, .a = 255 },
+    Color{ .r = 84, .g = 4, .b = 0, .a = 255 },
+    Color{ .r = 60, .g = 24, .b = 0, .a = 255 },
+    Color{ .r = 32, .g = 42, .b = 0, .a = 255 },
+    Color{ .r = 8, .g = 58, .b = 0, .a = 255 },
+    Color{ .r = 0, .g = 64, .b = 0, .a = 255 },
+    Color{ .r = 0, .g = 60, .b = 0, .a = 255 },
+    Color{ .r = 0, .g = 50, .b = 60, .a = 255 },
+    Color{ .r = 0, .g = 0, .b = 0, .a = 255 },
+    Color{ .r = 0, .g = 0, .b = 0, .a = 255 },
+    Color{ .r = 0, .g = 0, .b = 0, .a = 255 },
 
-    sdl.Color{ .r = 152, .g = 150, .b = 152, .a = 255 },
-    sdl.Color{ .r = 8, .g = 76, .b = 196, .a = 255 },
-    sdl.Color{ .r = 48, .g = 50, .b = 236, .a = 255 },
-    sdl.Color{ .r = 92, .g = 30, .b = 228, .a = 255 },
-    sdl.Color{ .r = 136, .g = 20, .b = 176, .a = 255 },
-    sdl.Color{ .r = 160, .g = 20, .b = 100, .a = 255 },
-    sdl.Color{ .r = 152, .g = 34, .b = 32, .a = 255 },
-    sdl.Color{ .r = 120, .g = 60, .b = 0, .a = 255 },
-    sdl.Color{ .r = 84, .g = 90, .b = 0, .a = 255 },
-    sdl.Color{ .r = 40, .g = 114, .b = 0, .a = 255 },
-    sdl.Color{ .r = 8, .g = 124, .b = 0, .a = 255 },
-    sdl.Color{ .r = 0, .g = 118, .b = 40, .a = 255 },
-    sdl.Color{ .r = 0, .g = 102, .b = 120, .a = 255 },
-    sdl.Color{ .r = 0, .g = 0, .b = 0, .a = 255 },
-    sdl.Color{ .r = 0, .g = 0, .b = 0, .a = 255 },
-    sdl.Color{ .r = 0, .g = 0, .b = 0, .a = 255 },
+    Color{ .r = 152, .g = 150, .b = 152, .a = 255 },
+    Color{ .r = 8, .g = 76, .b = 196, .a = 255 },
+    Color{ .r = 48, .g = 50, .b = 236, .a = 255 },
+    Color{ .r = 92, .g = 30, .b = 228, .a = 255 },
+    Color{ .r = 136, .g = 20, .b = 176, .a = 255 },
+    Color{ .r = 160, .g = 20, .b = 100, .a = 255 },
+    Color{ .r = 152, .g = 34, .b = 32, .a = 255 },
+    Color{ .r = 120, .g = 60, .b = 0, .a = 255 },
+    Color{ .r = 84, .g = 90, .b = 0, .a = 255 },
+    Color{ .r = 40, .g = 114, .b = 0, .a = 255 },
+    Color{ .r = 8, .g = 124, .b = 0, .a = 255 },
+    Color{ .r = 0, .g = 118, .b = 40, .a = 255 },
+    Color{ .r = 0, .g = 102, .b = 120, .a = 255 },
+    Color{ .r = 0, .g = 0, .b = 0, .a = 255 },
+    Color{ .r = 0, .g = 0, .b = 0, .a = 255 },
+    Color{ .r = 0, .g = 0, .b = 0, .a = 255 },
 
-    sdl.Color{ .r = 236, .g = 238, .b = 236, .a = 255 },
-    sdl.Color{ .r = 76, .g = 154, .b = 236, .a = 255 },
-    sdl.Color{ .r = 120, .g = 124, .b = 236, .a = 255 },
-    sdl.Color{ .r = 176, .g = 98, .b = 236, .a = 255 },
-    sdl.Color{ .r = 228, .g = 84, .b = 236, .a = 255 },
-    sdl.Color{ .r = 236, .g = 88, .b = 180, .a = 255 },
-    sdl.Color{ .r = 236, .g = 106, .b = 100, .a = 255 },
-    sdl.Color{ .r = 212, .g = 136, .b = 32, .a = 255 },
-    sdl.Color{ .r = 160, .g = 170, .b = 0, .a = 255 },
-    sdl.Color{ .r = 116, .g = 196, .b = 0, .a = 255 },
-    sdl.Color{ .r = 76, .g = 208, .b = 32, .a = 255 },
-    sdl.Color{ .r = 56, .g = 204, .b = 108, .a = 255 },
-    sdl.Color{ .r = 56, .g = 180, .b = 204, .a = 255 },
-    sdl.Color{ .r = 60, .g = 60, .b = 60, .a = 255 },
-    sdl.Color{ .r = 0, .g = 0, .b = 0, .a = 255 },
-    sdl.Color{ .r = 0, .g = 0, .b = 0, .a = 255 },
+    Color{ .r = 236, .g = 238, .b = 236, .a = 255 },
+    Color{ .r = 76, .g = 154, .b = 236, .a = 255 },
+    Color{ .r = 120, .g = 124, .b = 236, .a = 255 },
+    Color{ .r = 176, .g = 98, .b = 236, .a = 255 },
+    Color{ .r = 228, .g = 84, .b = 236, .a = 255 },
+    Color{ .r = 236, .g = 88, .b = 180, .a = 255 },
+    Color{ .r = 236, .g = 106, .b = 100, .a = 255 },
+    Color{ .r = 212, .g = 136, .b = 32, .a = 255 },
+    Color{ .r = 160, .g = 170, .b = 0, .a = 255 },
+    Color{ .r = 116, .g = 196, .b = 0, .a = 255 },
+    Color{ .r = 76, .g = 208, .b = 32, .a = 255 },
+    Color{ .r = 56, .g = 204, .b = 108, .a = 255 },
+    Color{ .r = 56, .g = 180, .b = 204, .a = 255 },
+    Color{ .r = 60, .g = 60, .b = 60, .a = 255 },
+    Color{ .r = 0, .g = 0, .b = 0, .a = 255 },
+    Color{ .r = 0, .g = 0, .b = 0, .a = 255 },
 
-    sdl.Color{ .r = 236, .g = 238, .b = 236, .a = 255 },
-    sdl.Color{ .r = 168, .g = 204, .b = 236, .a = 255 },
-    sdl.Color{ .r = 188, .g = 188, .b = 236, .a = 255 },
-    sdl.Color{ .r = 212, .g = 178, .b = 236, .a = 255 },
-    sdl.Color{ .r = 236, .g = 174, .b = 236, .a = 255 },
-    sdl.Color{ .r = 236, .g = 174, .b = 212, .a = 255 },
-    sdl.Color{ .r = 236, .g = 180, .b = 176, .a = 255 },
-    sdl.Color{ .r = 228, .g = 196, .b = 144, .a = 255 },
-    sdl.Color{ .r = 204, .g = 210, .b = 120, .a = 255 },
-    sdl.Color{ .r = 180, .g = 222, .b = 120, .a = 255 },
-    sdl.Color{ .r = 168, .g = 226, .b = 144, .a = 255 },
-    sdl.Color{ .r = 152, .g = 226, .b = 180, .a = 255 },
-    sdl.Color{ .r = 160, .g = 214, .b = 228, .a = 255 },
-    sdl.Color{ .r = 160, .g = 162, .b = 160, .a = 255 },
-    sdl.Color{ .r = 0, .g = 0, .b = 0, .a = 255 },
-    sdl.Color{ .r = 0, .g = 0, .b = 0, .a = 255 },
+    Color{ .r = 236, .g = 238, .b = 236, .a = 255 },
+    Color{ .r = 168, .g = 204, .b = 236, .a = 255 },
+    Color{ .r = 188, .g = 188, .b = 236, .a = 255 },
+    Color{ .r = 212, .g = 178, .b = 236, .a = 255 },
+    Color{ .r = 236, .g = 174, .b = 236, .a = 255 },
+    Color{ .r = 236, .g = 174, .b = 212, .a = 255 },
+    Color{ .r = 236, .g = 180, .b = 176, .a = 255 },
+    Color{ .r = 228, .g = 196, .b = 144, .a = 255 },
+    Color{ .r = 204, .g = 210, .b = 120, .a = 255 },
+    Color{ .r = 180, .g = 222, .b = 120, .a = 255 },
+    Color{ .r = 168, .g = 226, .b = 144, .a = 255 },
+    Color{ .r = 152, .g = 226, .b = 180, .a = 255 },
+    Color{ .r = 160, .g = 214, .b = 228, .a = 255 },
+    Color{ .r = 160, .g = 162, .b = 160, .a = 255 },
+    Color{ .r = 0, .g = 0, .b = 0, .a = 255 },
+    Color{ .r = 0, .g = 0, .b = 0, .a = 255 },
 };
