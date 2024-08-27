@@ -1,4 +1,5 @@
 zig-*
+.zig-cache
 !build.zig
 test-rom
 !nestest.nes
