@@ -6,6 +6,7 @@ const wgpu = zgpu.wgpu;
 const zgui = @import("zgui");
 
 const Config = @import("config.zig");
+const MainMenu = @import("main_menu.zig");
 
 const Nes = @import("nes/nes.zig");
 const CPU = @import("nes/cpu6502.zig");
@@ -19,10 +20,12 @@ pub fn main() !void {
     const gpa = gpa_state.allocator();
 
     const cwd = std.fs.cwd();
+    // const stdout_writer = std.io.getStdOut().writer();
 
     if (cwd.access(config_file_path, .{ .mode = .read_only })) |_| {} else |_| {
         const file = try cwd.createFile(config_file_path, .{});
-        const config = Config{};
+        var config = try Config.initDefault(gpa);
+        defer config.deinit();
         try config.save(file);
         file.close();
         std.log.info("Created Config file", .{});
@@ -31,7 +34,8 @@ pub fn main() !void {
     const config_file = try cwd.openFile(config_file_path, .{
         .mode = .read_only,
     });
-    const config = try Config.load(config_file, gpa);
+    var config = try Config.load(config_file, gpa);
+    defer config.deinit();
 
     try zglfw.init();
     defer zglfw.terminate();
@@ -61,8 +65,24 @@ pub fn main() !void {
             .fn_getWaylandSurface = @ptrCast(&zglfw.getWaylandWindow),
             .fn_getCocoaWindow = @ptrCast(&zglfw.getCocoaWindow),
         },
-        .{ .present_mode = if (config.vsync) .fifo else .mailbox },
+        .{ .present_mode = .fifo },
     );
+
+    // const primary_monitor_maybe = zglfw.Monitor.getPrimary();
+    // const refresh_rate = out: {
+    //     if (primary_monitor_maybe) |primary_monitor| {
+    //         if (primary_monitor.getVideoMode()) |video_mode| {
+    //             break :out video_mode.refresh_rate;
+    //         } else |_| {
+    //             try std.fmt.format(stdout_writer, "Can't get video mode! Setting refresh rate to 60", .{});
+    //             break :out 60;
+    //         }
+    //     } else {
+    //         try std.fmt.format(stdout_writer, "No primary monitor found! Setting refresh rate to 60", .{});
+    //         break :out 60;
+    //     }
+    // };
+
     defer gctx.destroy(gpa);
     std.log.info("Created Graphics Context", .{});
 
@@ -98,100 +118,87 @@ pub fn main() !void {
     try nes.startup(APU{});
     std.log.info("Initialized Nes", .{});
 
-    const frame_deadline = @as(f64, 1) / 60;
-    const input_deadline = @as(f64, 1) / @as(f64, @floatFromInt(config.input_poll_rate));
+    var main_menu_state = try MainMenu.init(gpa, &config, struct {
+        pub fn call(file_path: []u8) void {
+            _ = file_path;
+        }
+    });
+    defer main_menu_state.deinit();
+    try main_menu_state.findNesFile();
 
-    var start = zglfw.getTime();
-    var input_accumulated: f64 = 0;
-    var frame_accumulated: f64 = 0;
-
-    var delta: f64 = 0;
-    var input_poll_rate: f64 = 0;
-    var frame_rate: f64 = 0;
+    // const frame_deadline = @as(f64, 1) / 60;
+    // var frame_accumulated: f64 = 0;
+    // var frame_rate: f64 = 0;
+    // var start = zglfw.getTime();
 
     std.log.info("Starting main loop", .{});
     while (!window.shouldClose()) {
-        defer {
-            const now = zglfw.getTime();
-            delta = now - start;
-            frame_accumulated += delta;
-            input_accumulated += delta;
-            start = now;
-
-            input_poll_rate = @as(f64, 1) / input_accumulated;
-            input_accumulated -= input_deadline;
-            while (input_accumulated >= input_deadline) {
-                input_accumulated -= input_deadline;
-            }
-
-            preciseSleep(@min(input_deadline - delta, frame_deadline - delta));
-        }
-
         zglfw.pollEvents();
         nes.handleKey(window);
 
-        if (frame_accumulated >= frame_deadline) {
-            defer {
-                frame_rate = @as(f32, 1) / frame_accumulated;
-                frame_accumulated -= frame_deadline;
-                while (frame_accumulated >= frame_deadline) {
-                    frame_accumulated -= frame_deadline;
-                }
-            }
-            zgui.backend.newFrame(
-                gctx.swapchain_descriptor.width,
-                gctx.swapchain_descriptor.height,
-            );
+        // const now = zglfw.getTime();
+        // const delta = now - start;
+        // frame_accumulated += delta;
+        // start = now;
 
-            // zgui.showMetricsWindow(null);
+        // if (refresh_rate == 60 or frame_accumulated >= frame_deadline) {
+        //     defer {
+        //         frame_rate = @as(f32, 1) / frame_accumulated;
+        //         frame_accumulated -= frame_deadline;
+        //         while (frame_accumulated >= frame_deadline) {
+        //             frame_accumulated -= frame_deadline;
+        //         }
+        //     }
+        zgui.backend.newFrame(
+            gctx.swapchain_descriptor.width,
+            gctx.swapchain_descriptor.height,
+        );
 
-            if (config.show_metric) {
-                if (zgui.begin("Metric", .{})) {
-                    zgui.bulletText("Input poll rate: {d:.2}", .{input_poll_rate});
-                    zgui.bulletText("Frame rate: {d:.2}", .{frame_rate});
-                }
-                zgui.end();
-            }
+        main_menu_state.drawMenu(window);
 
-            // Set the starting window position and size to custom values
-
-            zgui.setNextWindowSize(.{
-                .w = Nes.SCREEN_SIZE.width,
-                .h = Nes.SCREEN_SIZE.height,
-                .cond = .first_use_ever,
-            });
-
-            const texture_id = try nes.runFrame();
-            if (zgui.begin("Main Game", .{})) {
-                zgui.image(texture_id, .{
-                    .w = Nes.SCREEN_SIZE.width * config.scale,
-                    .h = Nes.SCREEN_SIZE.height * config.scale,
-                });
-            }
-            zgui.end();
-
-            const swapchain_texv = gctx.swapchain.getCurrentTextureView();
-            defer swapchain_texv.release();
-
-            const commands = commands: {
-                const encoder = gctx.device.createCommandEncoder(null);
-                defer encoder.release();
-
-                // GUI pass
-                {
-                    const pass = zgpu.beginRenderPassSimple(encoder, .load, swapchain_texv, null, null, null);
-                    defer zgpu.endReleasePass(pass);
-                    zgui.backend.draw(pass);
-                }
-
-                break :commands encoder.finish(null);
-            };
-            defer commands.release();
-
-            gctx.submit(&.{commands});
-            _ = gctx.present();
+        if (config.show_metric) {
+            zgui.showMetricsWindow(null);
         }
+
+        // Set the starting window position and size to custom values
+
+        // zgui.setNextWindowSize(.{
+        //     .w = Nes.SCREEN_SIZE.width,
+        //     .h = Nes.SCREEN_SIZE.height,
+        //     .cond = .first_use_ever,
+        // });
+
+        // const texture_id = try nes.runFrame();
+        // if (zgui.begin("Main Game", .{})) {
+        //     zgui.image(texture_id, .{
+        //         .w = Nes.SCREEN_SIZE.width * config.scale,
+        //         .h = Nes.SCREEN_SIZE.height * config.scale,
+        //     });
+        // }
+        // zgui.end();
+
+        const swapchain_texv = gctx.swapchain.getCurrentTextureView();
+        defer swapchain_texv.release();
+
+        const commands = commands: {
+            const encoder = gctx.device.createCommandEncoder(null);
+            defer encoder.release();
+
+            // GUI pass
+            {
+                const pass = zgpu.beginRenderPassSimple(encoder, .load, swapchain_texv, null, null, null);
+                defer zgpu.endReleasePass(pass);
+                zgui.backend.draw(pass);
+            }
+
+            break :commands encoder.finish(null);
+        };
+        defer commands.release();
+
+        gctx.submit(&.{commands});
+        _ = gctx.present();
     }
+    // }
 }
 
 // https://blog.bearcats.nl/accurate-sleep-function/

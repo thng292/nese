@@ -239,10 +239,10 @@ pub fn clock(self: *PPU, texture_data: []u8) !void {
         const pixel = colors[
             self.internalRead(palette_offset + @as(u16, color_out))
         ];
-        texture_data[self.texture_pixel_count + 3] = pixel.r;
-        texture_data[self.texture_pixel_count + 2] = pixel.g;
-        texture_data[self.texture_pixel_count + 1] = pixel.b;
-        texture_data[self.texture_pixel_count + 0] = pixel.a;
+        texture_data[self.texture_pixel_count + 0] = pixel.r;
+        texture_data[self.texture_pixel_count + 1] = pixel.g;
+        texture_data[self.texture_pixel_count + 2] = pixel.b;
+        texture_data[self.texture_pixel_count + 3] = pixel.a;
         self.texture_pixel_count += 4;
     }
 

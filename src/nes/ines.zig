@@ -58,7 +58,6 @@ pub const ROM = struct {
     PRG_Rom: []u8,
     PRG_Ram: []u8,
     CHR_Rom: []u8,
-    allocator: std.mem.Allocator,
 
     pub const romError = error{
         FileCorrupted,
@@ -71,7 +70,6 @@ pub const ROM = struct {
             .PRG_Rom = undefined,
             .PRG_Ram = undefined,
             .CHR_Rom = undefined,
-            .allocator = allocator,
         };
 
         var buff = std.mem.zeroes([16]u8);
@@ -85,22 +83,22 @@ pub const ROM = struct {
             return romError.FileNotNESRom;
         }
 
-        self.PRG_Rom = try self.allocator.alloc(u8, self.header.getPRGROMSize());
+        self.PRG_Rom = try allocator.alloc(u8, self.header.getPRGROMSize());
         read = try file.read(self.PRG_Rom);
         if (read != self.header.getPRGROMSize()) {
             debug(@src());
             return romError.FileCorrupted;
         }
         errdefer {
-            self.allocator.free(self.PRG_Rom);
+            allocator.free(self.PRG_Rom);
         }
 
-        self.PRG_Ram = try self.allocator.alloc(
+        self.PRG_Ram = try allocator.alloc(
             u8,
             if (self.header.PRG_RAM_Size != 0) self.header.PRG_RAM_Size * BANK_8KB else BANK_32KB,
         );
         errdefer {
-            self.allocator.free(self.PRG_Ram);
+            allocator.free(self.PRG_Ram);
         }
         const hashed = jenkinsHash(self.PRG_Rom);
         const save_file_path = try std.fmt.allocPrint(
@@ -117,9 +115,9 @@ pub const ROM = struct {
         const CHR_ROM_size = self.header.getCHRROMSize();
         read = 0;
         if (CHR_ROM_size == 0) {
-            self.CHR_Rom = try self.allocator.alloc(u8, 0x2000);
+            self.CHR_Rom = try allocator.alloc(u8, 0x2000);
         } else {
-            self.CHR_Rom = try self.allocator.alloc(u8, CHR_ROM_size);
+            self.CHR_Rom = try allocator.alloc(u8, CHR_ROM_size);
             read = try file.read(self.CHR_Rom);
         }
         if (read != CHR_ROM_size) {
@@ -127,18 +125,18 @@ pub const ROM = struct {
             return romError.FileCorrupted;
         }
         errdefer {
-            self.allocator.free(self.CHR_Rom);
+            allocator.free(self.CHR_Rom);
         }
 
         return self;
     }
 
-    pub fn deinit(self: *ROM) void {
+    pub fn deinit(self: *ROM, allocator: std.mem.Allocator) void {
         if (self.header.hasPersistentMem) save_fail: {
             // Dump the ram
             const hashed = jenkinsHash(self.PRG_Rom);
             const save_file_name = std.fmt.allocPrint(
-                self.allocator,
+                allocator,
                 save_path ++ "{X:0>8}.bin",
                 .{hashed},
             ) catch save_path ++ "last_save.bin";
@@ -149,9 +147,9 @@ pub const ROM = struct {
             save_file.writeAll(self.PRG_Ram) catch break :save_fail;
         }
 
-        self.allocator.free(self.PRG_Rom);
-        self.allocator.free(self.PRG_Ram);
-        self.allocator.free(self.CHR_Rom);
+        allocator.free(self.PRG_Rom);
+        allocator.free(self.PRG_Ram);
+        allocator.free(self.CHR_Rom);
     }
 };
 

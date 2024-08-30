@@ -58,7 +58,7 @@ pub fn init(allocator: std.mem.Allocator, rom_file: std.fs.File, gctx: *zgpu.Gra
 }
 
 pub fn deinit(self: *Nes) void {
-    self.rom.deinit();
+    self.rom.deinit(self.allocator);
     self.allocator.free(self.texture_data);
     self.gctx.destroyResource(self.screen_texture_handle);
 }
