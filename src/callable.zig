@@ -111,6 +111,30 @@ test "Test Callable With Context" {
     try std.testing.expect(result == 13);
 }
 
+test "Test Callable With Context Alloc" {
+    const Context = struct {
+        base: u64,
+        allocator: std.mem.Allocator,
+    };
+    var context = try std.testing.allocator.create(Context);
+    context.base = 10;
+    context.allocator = std.testing.allocator;
+    const lambda = Callable(@TypeOf(add)).init(
+        &addContext,
+        @ptrCast(context),
+        struct {
+            pub fn call(context_: *anyopaque) void {
+                const ctx = @as(*Context, @ptrCast(@alignCast(context_)));
+                const allocator = ctx.allocator;
+                allocator.destroy(ctx);
+            }
+        }.call,
+    );
+    defer lambda.deinit();
+    const result = lambda.call(.{ 1, 2 });
+    try std.testing.expect(result == 13);
+}
+
 pub fn ParamOf(comptime function_type: type) type {
     const fn_type_info = @typeInfo(function_type);
     comptime {
