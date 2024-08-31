@@ -1,90 +1,80 @@
 const std = @import("std");
 
-pub fn Callable(comptime callsite_fn_type: type) type {
-    const callsite_fn_type_info = @typeInfo(callsite_fn_type);
+pub fn Callable(comptime Callsite_fn: type) type {
+    const callsite_fn_type_info = @typeInfo(Callsite_fn);
     comptime {
         if (callsite_fn_type_info != .Fn) {
-            @compileError("Expected a function type, not " ++ @typeName(callsite_fn_type));
+            @compileError("Expected a function type, not " ++ @typeName(Callsite_fn));
         }
     }
 
     const callsite_fn_info = callsite_fn_type_info.Fn;
+    const Passsite_fn = blk: {
+        var passsite_fn_param: [callsite_fn_info.params.len + 1]std.builtin.Type.Fn.Param = undefined;
+        passsite_fn_param[0] = .{
+            .is_generic = false,
+            .is_noalias = false,
+            .type = *anyopaque,
+        };
+        for (callsite_fn_info.params, 1..) |param, i| {
+            passsite_fn_param[i] = param;
+        }
+
+        var tmp = callsite_fn_info;
+        tmp.params = passsite_fn_param[0..];
+
+        const Type = @Type(.{ .Fn = tmp });
+        break :blk *const Type;
+    };
 
     return struct {
         const Self = @This();
-        original_function_type: type,
-        closure_type: type,
         function: *const anyopaque,
-        closure: ?*anyopaque = null,
-        allocator: ?std.mem.Allocator,
+        context: ?*anyopaque = null,
+        deinit_fn: ?*const fn (*anyopaque) void,
 
         pub fn init(
-            comptime Function: type,
-            comptime Closure: type,
-            function: *const Function,
-            closure: *Closure,
-            allocator_maybe: ?std.mem.Allocator,
+            function: *const anyopaque,
+            context: ?*anyopaque,
+            deinit_fn: ?*const fn (*anyopaque) void,
         ) Self {
-            const fn_type = @TypeOf(function);
-            const fn_type_info = @typeInfo(fn_type);
-            if (fn_type_info != .Pointer or @typeInfo(fn_type_info.Pointer.child) != .Fn) {
-                @compileError("Expect a pointer to const function for function, not " ++ @typeName(function));
-            }
-            const in_fn_params = @typeInfo(fn_type_info.Pointer.child).Fn.params;
-            var index: usize = 0;
-            if (Closure != @TypeOf(null)) {
-                if (in_fn_params[0].type != *Closure) {
-                    @compileError("Expect a function with first parameter's type is " //
-                    ++ @typeName(*Closure) ++ ", not " ++ @typeName(in_fn_params[0].type.?));
-                }
-                index = 1;
-            }
-            for (callsite_fn_info.params, index..) |param, i| {
-                if (in_fn_params[i].type != param.type) {
-                    @compileError("Expect a function with " //
-                    ++ std.fmt.comptimePrint("{d}", .{i}) ++ " parameter's type is " //
-                    ++ @typeName(param.type) ++ ", not " ++ @typeName(in_fn_params[i].type.?));
-                }
-            }
-
             return Self{
-                .allocator = allocator_maybe,
-                .function = @ptrCast(function),
-                .original_function_type = @TypeOf(function),
-                .closure = if (Closure != @TypeOf(null)) @ptrCast(closure) else @ptrCast(@constCast(function)),
-                .closure_type = *Closure,
+                .function = function,
+                .context = context,
+                .deinit_fn = deinit_fn,
             };
         }
 
-        pub fn initNoContext(comptime Function: type, function: *const Function) Self {
-            return Self.init(
-                Function,
-                @TypeOf(null),
-                function,
-                @ptrCast(@constCast(function)),
-                null,
-            );
+        pub fn initNoContext(
+            function: *const Callsite_fn,
+            deinit_fn: ?*const fn (*anyopaque) void,
+        ) Self {
+            return Self.init(@ptrCast(function), null, deinit_fn);
         }
 
         pub fn call(
             self: Self,
-            param: ParamOf(callsite_fn_type),
+            param: ParamOf(Callsite_fn),
         ) callconv(callsite_fn_info.calling_convention) callsite_fn_info.return_type.? {
-            return @call(
-                .auto,
-                @as(self.original_function_type, @ptrCast(self.function)),
-                if (self.closure) |_| .{@as(self.closure_type, @ptrCast(self.closure))} ++ param else param,
-                // param,
-            );
+            if (self.context) |closure| {
+                return @call(
+                    .auto,
+                    @as(Passsite_fn, @ptrCast(self.function)),
+                    .{closure} ++ param,
+                );
+            } else {
+                return @call(
+                    .auto,
+                    @as(*const Callsite_fn, @ptrCast(self.function)),
+                    param,
+                );
+            }
         }
 
         pub fn deinit(self: Self) void {
-            if (@hasDecl(self.closure_type, "deinit")) {
-                @as(self.closure_type, @ptrCast(self.closure)).deinit();
-            }
-            if (self.allocator) |allocator| {
-                if (self.closure) |ptr| {
-                    allocator.destroy(@as(self.closure_type, @ptrCast(ptr)));
+            if (self.deinit_fn) |deinit_fn| {
+                if (self.context) |context| {
+                    deinit_fn(context);
                 }
             }
         }
@@ -97,8 +87,8 @@ fn add(a: u64, b: u64) u64 {
 
 test "Test Callable No Context" {
     const lambda = Callable(@TypeOf(add)).initNoContext(
-        @TypeOf(add),
         &add,
+        null,
     );
     defer lambda.deinit();
     const result = lambda.call(.{ 1, 2 });
@@ -110,12 +100,10 @@ fn addContext(base: *u64, a: u64, b: u64) u64 {
 }
 
 test "Test Callable With Context" {
-    const base: u64 = 10;
-    const lambda = try Callable(@TypeOf(add)).init(
-        @TypeOf(addContext),
-        u64,
+    var base: u64 = 10;
+    const lambda = Callable(@TypeOf(add)).init(
         &addContext,
-        &base,
+        @ptrCast(&base),
         null,
     );
     defer lambda.deinit();
