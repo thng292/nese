@@ -50,7 +50,6 @@ pub fn drawMenu(self: *Self, window: *zglfw.Window) void {
         }
     }
     zgui.end();
-    zgui.DrawCallback
 }
 
 pub fn findNesFile(self: *Self) !void {

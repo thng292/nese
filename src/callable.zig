@@ -12,39 +12,38 @@ pub fn Callable(comptime callsite_fn_type: type) type {
 
     return struct {
         const Self = @This();
-        function: *const anyopaque,
         original_function_type: type,
-        closure: ?*anyopaque = null,
         closure_type: type,
+        function: *const anyopaque,
+        closure: ?*anyopaque = null,
         allocator: ?std.mem.Allocator,
 
         pub fn init(
-            comptime function: anytype,
+            comptime Function: type,
             comptime Closure: type,
+            function: *const Function,
             closure: *Closure,
             allocator_maybe: ?std.mem.Allocator,
-        ) !Self {
-            comptime {
-                const fn_type = @TypeOf(function);
-                const fn_type_info = @typeInfo(fn_type);
-                if (fn_type_info != .Pointer or @typeInfo(fn_type_info.Pointer.child) != .Fn) {
-                    @compileError("Expect a pointer to const function for function, not " ++ @typeName(function));
+        ) Self {
+            const fn_type = @TypeOf(function);
+            const fn_type_info = @typeInfo(fn_type);
+            if (fn_type_info != .Pointer or @typeInfo(fn_type_info.Pointer.child) != .Fn) {
+                @compileError("Expect a pointer to const function for function, not " ++ @typeName(function));
+            }
+            const in_fn_params = @typeInfo(fn_type_info.Pointer.child).Fn.params;
+            var index: usize = 0;
+            if (Closure != @TypeOf(null)) {
+                if (in_fn_params[0].type != *Closure) {
+                    @compileError("Expect a function with first parameter's type is " //
+                    ++ @typeName(*Closure) ++ ", not " ++ @typeName(in_fn_params[0].type.?));
                 }
-                const in_fn_params = @typeInfo(fn_type_info.Pointer.child).Fn.params;
-                var index: usize = 0;
-                if (Closure != void) {
-                    if (in_fn_params[0].type != *Closure) {
-                        @compileError("Expect a function with first parameter's type is " //
-                        ++ @typeName(*Closure) ++ ", not " ++ @typeName(in_fn_params[0].type.?));
-                    }
-                    index = 1;
-                }
-                for (callsite_fn_info.params, index..) |param, i| {
-                    if (in_fn_params[i].type != param.type) {
-                        @compileError("Expect a function with " //
-                        ++ std.fmt.comptimePrint("{d}", .{i}) ++ " parameter's type is " //
-                        ++ @typeName(param.type) ++ ", not " ++ @typeName(in_fn_params[i].type.?));
-                    }
+                index = 1;
+            }
+            for (callsite_fn_info.params, index..) |param, i| {
+                if (in_fn_params[i].type != param.type) {
+                    @compileError("Expect a function with " //
+                    ++ std.fmt.comptimePrint("{d}", .{i}) ++ " parameter's type is " //
+                    ++ @typeName(param.type) ++ ", not " ++ @typeName(in_fn_params[i].type.?));
                 }
             }
 
@@ -52,9 +51,19 @@ pub fn Callable(comptime callsite_fn_type: type) type {
                 .allocator = allocator_maybe,
                 .function = @ptrCast(function),
                 .original_function_type = @TypeOf(function),
-                .closure = @ptrCast(closure),
+                .closure = if (Closure != @TypeOf(null)) @ptrCast(closure) else @ptrCast(@constCast(function)),
                 .closure_type = *Closure,
             };
+        }
+
+        pub fn initNoContext(comptime Function: type, function: *const Function) Self {
+            return Self.init(
+                Function,
+                @TypeOf(null),
+                function,
+                @ptrCast(@constCast(function)),
+                null,
+            );
         }
 
         pub fn call(
@@ -70,6 +79,9 @@ pub fn Callable(comptime callsite_fn_type: type) type {
         }
 
         pub fn deinit(self: Self) void {
+            if (@hasDecl(self.closure_type, "deinit")) {
+                @as(self.closure_type, @ptrCast(self.closure)).deinit();
+            }
             if (self.allocator) |allocator| {
                 if (self.closure) |ptr| {
                     allocator.destroy(@as(self.closure_type, @ptrCast(ptr)));
@@ -84,11 +96,9 @@ fn add(a: u64, b: u64) u64 {
 }
 
 test "Test Callable No Context" {
-    const lambda = try Callable(@TypeOf(add)).init(
+    const lambda = Callable(@TypeOf(add)).initNoContext(
+        @TypeOf(add),
         &add,
-        void,
-        @ptrFromInt(10),
-        null,
     );
     defer lambda.deinit();
     const result = lambda.call(.{ 1, 2 });
@@ -100,10 +110,11 @@ fn addContext(base: *u64, a: u64, b: u64) u64 {
 }
 
 test "Test Callable With Context" {
-    var base: u64 = 10;
+    const base: u64 = 10;
     const lambda = try Callable(@TypeOf(add)).init(
-        &addContext,
+        @TypeOf(addContext),
         u64,
+        &addContext,
         &base,
         null,
     );
