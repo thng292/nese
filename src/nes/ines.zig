@@ -151,6 +151,10 @@ pub const ROM = struct {
         allocator.free(self.PRG_Ram);
         allocator.free(self.CHR_Rom);
     }
+
+    pub fn getHash(self: *const ROM) u32 {
+        return jenkinsHash(self.PRG_Rom);
+    }
 };
 
 inline fn debug(src: std.builtin.SourceLocation) void {

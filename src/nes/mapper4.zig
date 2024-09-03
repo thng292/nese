@@ -81,7 +81,7 @@ pub fn cpuWrite(self: *Self, addr: u16, data: u8) void {
         0xC000...0xDFFF => if (isEven(addr)) {
             self.irq_latch = data;
         } else {
-            self.irq_counter = 0;
+            self.irq_counter = self.irq_latch;
         },
         0xE000...0xFFFF => self.irq_enable = !isEven(addr),
         else => {},
@@ -99,7 +99,7 @@ pub fn ppuWrite(self: *Self, addr: u16, data: u8) void {
 }
 
 pub fn resolveNametableAddr(self: *Self, addr: u16) u16 {
-    const ntaddr = addr - 0x2000;
+    const ntaddr = addr & 0x0FFF;
     var nametable_num = ntaddr / 0x400;
     const ntindex = ntaddr % 0x400;
     const ntmap_h = [_]u8{ 0, 0, 1, 1 };
@@ -116,9 +116,11 @@ pub fn shouldIrq(self: *Self) bool {
         self.irq_counter = self.irq_latch;
     } else {
         self.irq_counter -= 1;
+        if (self.irq_counter == 0 and self.irq_enable) {
+            return true;
+        }
     }
-
-    return self.irq_counter == 0 and self.irq_enable;
+    return false;
 }
 
 inline fn updateOffsetTable(self: *Self) void {

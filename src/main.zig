@@ -7,6 +7,7 @@ const zgui = @import("zgui");
 
 const Config = @import("config.zig");
 const MainMenu = @import("main_menu.zig");
+const Callable = @import("callable.zig").Callable;
 
 const Nes = @import("nes/nes.zig");
 const CPU = @import("nes/cpu6502.zig");
@@ -22,19 +23,21 @@ pub fn main() !void {
     const cwd = std.fs.cwd();
     // const stdout_writer = std.io.getStdOut().writer();
 
-    if (cwd.access(config_file_path, .{ .mode = .read_only })) |_| {} else |_| {
-        const file = try cwd.createFile(config_file_path, .{});
-        var config = try Config.initDefault(gpa);
-        defer config.deinit();
-        try config.save(file);
-        file.close();
-        std.log.info("Created Config file", .{});
-    }
+    // if (cwd.access(config_file_path, .{ .mode = .read_only })) |_| {} else |_| {
+    //     const file = try cwd.createFile(config_file_path, .{});
+    //     var config = try Config.initDefault(gpa);
+    //     defer config.deinit();
+    //     try config.save(file);
+    //     file.close();
+    //     std.log.info("Created Config file", .{});
+    // }
 
-    const config_file = try cwd.openFile(config_file_path, .{
+    const config_file = cwd.openFile(config_file_path, .{
         .mode = .read_only,
-    });
-    var config = try Config.load(config_file, gpa);
+    }) catch undefined;
+    var config = Config.load(config_file, gpa) catch
+        try Config.initDefault(gpa);
+
     defer config.deinit();
 
     try zglfw.init();
@@ -93,6 +96,12 @@ pub fn main() !void {
 
     zgui.init(gpa);
     defer zgui.deinit();
+    zgui.io.setConfigFlags(.{
+        .nav_enable_keyboard = true,
+        .nav_enable_gamepad = true,
+        .dpi_enable_scale_fonts = true,
+        .dpi_enable_scale_viewport = true,
+    });
     std.log.info("Initialized ImGUI", .{});
 
     zgui.backend.init(
@@ -106,25 +115,38 @@ pub fn main() !void {
 
     zgui.getStyle().scaleAllSizes(scale_factor);
 
-    var arg_it = std.process.args();
-    _ = arg_it.next(); // skip first arg
+    // var arg_it = try std.process.argsWithAllocator(gpa);
+    // _ = arg_it.next(); // skip first arg
 
-    const rom_file = try cwd.openFile(
-        arg_it.next().?,
-        .{ .mode = .read_only },
-    );
-    var nes = try Nes.init(gpa, rom_file, gctx);
-    defer nes.deinit();
-    try nes.startup(APU{});
+    // const rom_file = try cwd.openFile(
+    //     arg_it.next().?,
+    //     .{ .mode = .read_only },
+    // );
+    // arg_it.deinit();
+    // var nes = try Nes.init(gpa, rom_file, gctx);
+    // defer nes.deinit();
+    // try nes.startup(APU{});
     std.log.info("Initialized Nes", .{});
 
-    var main_menu_state = try MainMenu.init(gpa, &config, struct {
-        pub fn call(file_path: []u8) void {
-            _ = file_path;
+    const OpenGameContext = struct {
+        const Self = @This();
+        pub fn openGame(self: *Self, game_path: []u8) void {
+            _ = self;
+            std.log.info("Opening: {s}", .{game_path});
         }
-    });
+    };
+    var openGameContext = OpenGameContext{};
+
+    var main_menu_state = try MainMenu.init(
+        gpa,
+        &config,
+        MainMenu.OpenGameCallable.init(
+            OpenGameContext.openGame,
+            &openGameContext,
+            null,
+        ),
+    );
     defer main_menu_state.deinit();
-    try main_menu_state.findNesFile();
 
     // const frame_deadline = @as(f64, 1) / 60;
     // var frame_accumulated: f64 = 0;
@@ -134,7 +156,7 @@ pub fn main() !void {
     std.log.info("Starting main loop", .{});
     while (!window.shouldClose()) {
         zglfw.pollEvents();
-        nes.handleKey(window);
+        // nes.handleKey(window);
 
         // const now = zglfw.getTime();
         // const delta = now - start;
@@ -154,19 +176,45 @@ pub fn main() !void {
             gctx.swapchain_descriptor.height,
         );
 
+        // Add a top menu bar
+        if (zgui.beginMenuBar()) {
+            if (zgui.beginMenu("File", true)) {
+                if (zgui.menuItem("Open", .{})) {
+                    // Handle open action
+                }
+                if (zgui.menuItem("Exit", .{})) {
+                    // Handle exit action
+                }
+                zgui.endMenu();
+            }
+            if (zgui.beginMenu("Help", true)) {
+                if (zgui.menuItem("About", .{})) {
+                    // Handle about action
+                }
+                zgui.endMenu();
+            }
+            if (zgui.beginMenu("Help", true)) {
+                if (zgui.menuItem("About", .{})) {
+                    // Handle about action
+                }
+                zgui.endMenu();
+            }
+            zgui.endMenuBar();
+        }
+
         main_menu_state.drawMenu(window);
 
         if (config.show_metric) {
-            zgui.showMetricsWindow(null);
+            // zgui.showMetricsWindow(null);
         }
 
         // Set the starting window position and size to custom values
 
-        // zgui.setNextWindowSize(.{
-        //     .w = Nes.SCREEN_SIZE.width,
-        //     .h = Nes.SCREEN_SIZE.height,
-        //     .cond = .first_use_ever,
-        // });
+        zgui.setNextWindowSize(.{
+            .w = Nes.SCREEN_SIZE.width,
+            .h = Nes.SCREEN_SIZE.height,
+            .cond = .first_use_ever,
+        });
 
         // const texture_id = try nes.runFrame();
         // if (zgui.begin("Main Game", .{})) {

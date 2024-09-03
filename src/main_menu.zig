@@ -2,37 +2,44 @@ const std = @import("std");
 const zgui = @import("zgui");
 const zglfw = @import("zglfw");
 
+const Callable = @import("callable.zig").Callable;
 const Config = @import("config.zig");
 const Self = @This();
 
 const nes_file_extentions = .{".nes"};
-const OpenGameFn = fn (file_path: []u8) void;
+pub const OpenGameCallable = Callable(fn (file_path: []u8) void);
 
+arena: std.heap.ArenaAllocator,
 config: *Config,
-allocator: std.mem.Allocator,
-file_paths: std.ArrayListUnmanaged([]u8),
-open_game_fn: *OpenGameFn,
+open_game_callable: OpenGameCallable,
 
-pub fn init(allocator: std.mem.Allocator, config: *Config, open_game_fn: *OpenGameFn) !Self {
+pub fn init(
+    allocator: std.mem.Allocator,
+    config: *Config,
+    open_game_callable: OpenGameCallable,
+) !Self {
     return Self{
+        .arena = std.heap.ArenaAllocator.init(allocator),
         .config = config,
-        .allocator = allocator,
-        .file_paths = try std.ArrayListUnmanaged([]u8).initCapacity(allocator, 0),
-        .open_game_fn = open_game_fn,
+        .open_game_callable = open_game_callable,
     };
 }
 
 pub fn deinit(self: *Self) void {
-    for (self.file_paths.items) |file_path| {
-        self.allocator.free(file_path);
-    }
-    self.file_paths.deinit(self.allocator);
+    self.arena.deinit();
 }
 
 pub fn drawMenu(self: *Self, window: *zglfw.Window) void {
+    _ = self.arena.reset(.retain_capacity);
+    const allocator = self.arena.allocator();
+
     const size_tuple = window.getSize();
     const screen_w = @as(f32, @floatFromInt(size_tuple[0]));
     const screen_h = @as(f32, @floatFromInt(size_tuple[1]));
+    const style = zgui.getStyle();
+    const button_text_align_style = style.button_text_align;
+    style.button_text_align = [_]f32{ 0, 0.5 };
+    defer style.button_text_align = button_text_align_style;
 
     zgui.setNextWindowPos(.{ .cond = .always, .x = 0, .y = 0 });
     zgui.setNextWindowSize(.{ .cond = .always, .w = screen_w, .h = screen_h });
@@ -42,45 +49,35 @@ pub fn drawMenu(self: *Self, window: *zglfw.Window) void {
         .no_collapse = true,
         .no_title_bar = true,
     } })) {
-        for (self.file_paths.items) |file_path| {
-            if (zgui.button(
-                @ptrCast(file_path),
-                .{ .w = screen_w, .h = 40 },
-            )) {}
+        defer zgui.end();
+        if (self.config.games.len == 0) {
+            zgui.text("It's empty here, try adding some games.", .{});
+            return;
         }
-    }
-    zgui.end();
-}
+        for (self.config.games) |game| {
+            const button_id = allocator.dupeZ(u8, game.name) catch "Some error occured";
+            const button_size = .{ .w = screen_w, .h = 40 };
 
-pub fn findNesFile(self: *Self) !void {
-    const cwd = std.fs.cwd();
-    for (self.file_paths.items) |file_path| {
-        self.allocator.free(file_path);
-    }
-    self.file_paths.clearAndFree(self.allocator);
+            // Set button color to almost black
+            zgui.pushStyleColor4f(.{ .idx = .button, .c = [_]f32{ 0.1, 0.1, 0.1, 1.0 } });
 
-    if (self.config.game_path.len == 0) {
-        return;
-    }
-
-    const game_dir = try cwd.openDir(self.config.game_path, .{ .iterate = true });
-    var dir_walker = try game_dir.walk(self.allocator);
-    defer dir_walker.deinit();
-
-    while (try dir_walker.next()) |entry| {
-        if (entry.kind == .file) {
-            var is_nes_file = true;
-            inline for (nes_file_extentions) |extentions| {
-                is_nes_file = is_nes_file and std.mem.endsWith(
-                    u8,
-                    entry.basename[0..],
-                    extentions[0..],
-                );
+            // Draw button with border on hover
+            if (zgui.button(button_id, button_size)) {
+                self.open_game_callable.call(.{game.path});
             }
-            if (is_nes_file) {
-                const memory = try self.allocator.alloc(u8, entry.path.len);
-                @memcpy(memory, entry.path);
-                try self.file_paths.append(self.allocator, memory);
+
+            zgui.popStyleColor(.{});
+            // Check for right-click to open context menu
+            if (zgui.isItemClicked(.right)) {
+                zgui.openPopup(button_id, .{});
+            }
+
+            // Context menu
+            if (zgui.beginPopup(button_id, .{})) {
+                if (zgui.menuItem("Open", .{})) {
+                    self.open_game_callable.call(.{game.path});
+                }
+                zgui.endPopup();
             }
         }
     }

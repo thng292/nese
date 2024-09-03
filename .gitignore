@@ -1,5 +1,6 @@
 zig-*
 .zig-cache
+**/.zig-cache/
 !build.zig
 test-rom
 !nestest.nes
@@ -10,3 +11,4 @@ log.txt
 nese
 saves/
 .idea
+config.json
