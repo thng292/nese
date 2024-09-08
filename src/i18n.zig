@@ -38,6 +38,14 @@ main_menu: struct {
     favorite: Str = "Favorite",
 } = .{},
 
+main_menu_context_menu: struct {
+    open: Str = "Open",
+    remove: Str = "Remove",
+    mark_favorite: Str = "Add to favorite",
+    unmark_favorite: Str = "Remove from favorite",
+    rename: Str = "Rename",
+} = .{},
+
 pub fn deinit(self: Self) void {
     if (self.parsed) |parsed_| {
         const parsed: *std.json.Parsed(Serializable) = @ptrCast(parsed_);

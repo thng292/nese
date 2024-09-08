@@ -139,14 +139,16 @@ pub fn main() !void {
     };
     var openGameContext = OpenGameContext{};
 
-    var main_menu_state = MainMenu{
-        .config = &config,
-        .open_game_callable = MainMenu.OpenGameCallable.init(
+    var main_menu_state = MainMenu.init(
+        gpa,
+        &config,
+        MainMenu.OpenGameCallable.init(
             OpenGameContext.openGame,
             &openGameContext,
             null,
         ),
-    };
+    );
+    defer main_menu_state.deinit();
 
     // const frame_deadline = @as(f64, 1) / 60;
     // var frame_accumulated: f64 = 0;

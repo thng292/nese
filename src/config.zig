@@ -99,15 +99,6 @@ pub fn save(self: Self, file: std.fs.File) !void {
     );
 }
 
-fn checkGameExists(self: Self, path: []u8) bool {
-    for (self.games) |game| {
-        if (std.mem.eql(u8, game.path, path)) {
-            return true;
-        }
-    }
-    return false;
-}
-
 pub fn addGame(self: *Self, path: []u8) !void {
     if (self.checkGameExists(path)) {
         return;
@@ -126,6 +117,7 @@ pub fn addGame(self: *Self, path: []u8) !void {
             .is_favorite = false,
         },
     );
+    self.shortGames();
     self.update_ref();
 }
 
@@ -134,22 +126,33 @@ pub fn addGameCopy(self: *Self, path: []u8) !void {
     try self.addGame(path_mem);
 }
 
-pub fn removeGame(self: *Self, index: usize) !void {
+pub fn removeGame(self: *Self, index: usize) void {
     const game = self.games[index];
-    try self.games_list.remove(index);
-    game.deinit(self.allocator);
+    _ = self.ns.games_list.orderedRemove(index);
+    game.deinit(self.ns.allocator);
+    self.shortGames();
     self.update_ref();
 }
 
-pub fn renameGame(self: *Self, index: usize, new_name: []u8) !void {
-    const game = self.games[index];
-    self.allocator.free(game.name);
+pub fn renameGame(self: *Self, index: usize, new_name: []u8) void {
+    const game = &self.games[index];
+    self.ns.allocator.free(game.name);
     game.name = new_name;
+    self.shortGames();
 }
 
 pub fn renameGameCopy(self: *Self, index: usize, new_name: []u8) !void {
-    const new_name_mem = try self.allocator.dupe(u8, new_name);
-    try self.renameGame(index, new_name_mem);
+    const new_name_mem = try self.ns.allocator.dupe(u8, new_name);
+    self.renameGame(index, new_name_mem);
+}
+
+pub fn toggleFavorite(self: *Self, index: usize) void {
+    self.ns.games_list.items[index].is_favorite = !self.ns.games_list.items[index].is_favorite;
+    self.shortGames();
+}
+
+pub fn updateGameListAfterInlineChange(self: *Self) void {
+    self.shortGames();
 }
 
 fn scanDirectory(self: *Self, path: []u8) !void {
@@ -194,6 +197,27 @@ pub fn rescanDirectories(self: *Self) !void {
     for (self.game_dirs) |dir| {
         self.scanDirectory(dir);
     }
+}
+
+fn checkGameExists(self: Self, path: []u8) bool {
+    for (self.games) |game| {
+        if (std.mem.eql(u8, game.path, path)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+fn shortGames(self: *Self) void {
+    const funtions = struct {
+        fn gameLessthan(_: void, lhs: Game, rhs: Game) bool {
+            if (lhs.is_favorite == rhs.is_favorite) {
+                return std.mem.lessThan(u8, lhs.name, rhs.name);
+            }
+            return @intFromBool(lhs.is_favorite) > @intFromBool(rhs.is_favorite);
+        }
+    };
+    std.mem.sort(Game, self.ns.games_list.items, {}, funtions.gameLessthan);
 }
 
 const GameList = std.ArrayListUnmanaged(Game);
