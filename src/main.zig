@@ -8,6 +8,7 @@ const zgui = @import("zgui");
 const Config = @import("config.zig");
 const MainMenu = @import("main_menu.zig");
 const Callable = @import("callable.zig").Callable;
+const Strings = @import("i18n.zig");
 
 const Nes = @import("nes/nes.zig");
 const CPU = @import("nes/cpu6502.zig");
@@ -21,24 +22,25 @@ pub fn main() !void {
     const gpa = gpa_state.allocator();
 
     const cwd = std.fs.cwd();
-    // const stdout_writer = std.io.getStdOut().writer();
 
-    // if (cwd.access(config_file_path, .{ .mode = .read_only })) |_| {} else |_| {
-    //     const file = try cwd.createFile(config_file_path, .{});
-    //     var config = try Config.initDefault(gpa);
-    //     defer config.deinit();
-    //     try config.save(file);
-    //     file.close();
-    //     std.log.info("Created Config file", .{});
-    // }
+    const strings = Strings{};
 
     const config_file = cwd.openFile(config_file_path, .{
         .mode = .read_only,
     }) catch undefined;
     var config = Config.load(config_file, gpa) catch
         try Config.initDefault(gpa);
-
-    defer config.deinit();
+    defer {
+        var err: anyerror = undefined;
+        if (cwd.openFile(config_file_path, .{ .mode = .write_only })) |file| {
+            config.save(file) catch |e| {
+                err = e;
+            };
+        } else |e| {
+            err = e;
+        }
+        config.deinit();
+    }
 
     try zglfw.init();
     defer zglfw.terminate();
@@ -113,7 +115,7 @@ pub fn main() !void {
     defer zgui.backend.deinit();
     std.log.info("Initialized ImGUI's backend", .{});
 
-    zgui.getStyle().scaleAllSizes(scale_factor);
+    zgui.getStyle().scaleAllSizes(scale_factor * config.ui_scale);
 
     // var arg_it = try std.process.argsWithAllocator(gpa);
     // _ = arg_it.next(); // skip first arg
@@ -137,16 +139,14 @@ pub fn main() !void {
     };
     var openGameContext = OpenGameContext{};
 
-    var main_menu_state = try MainMenu.init(
-        gpa,
-        &config,
-        MainMenu.OpenGameCallable.init(
+    var main_menu_state = MainMenu{
+        .config = &config,
+        .open_game_callable = MainMenu.OpenGameCallable.init(
             OpenGameContext.openGame,
             &openGameContext,
             null,
         ),
-    );
-    defer main_menu_state.deinit();
+    };
 
     // const frame_deadline = @as(f64, 1) / 60;
     // var frame_accumulated: f64 = 0;
@@ -176,39 +176,48 @@ pub fn main() !void {
             gctx.swapchain_descriptor.height,
         );
 
-        // Add a top menu bar
-        if (zgui.beginMenuBar()) {
-            if (zgui.beginMenu("File", true)) {
-                if (zgui.menuItem("Open", .{})) {
+        if (zgui.beginMainMenuBar()) {
+            defer zgui.endMainMenuBar();
+            if (zgui.beginMenu(strings.main_menu_bar.file, true)) {
+                defer zgui.endMenu();
+                if (zgui.menuItem(strings.file_menu_items.load_game, .{})) {
                     // Handle open action
                 }
-                if (zgui.menuItem("Exit", .{})) {
-                    // Handle exit action
+                if (zgui.menuItem(strings.file_menu_items.load_dir, .{})) {
+                    // Handle open action
                 }
-                zgui.endMenu();
+                if (zgui.menuItem(strings.file_menu_items.exit, .{})) {
+                    return;
+                }
             }
-            if (zgui.beginMenu("Help", true)) {
-                if (zgui.menuItem("About", .{})) {
+            if (zgui.beginMenu(strings.main_menu_bar.emulation, true)) {
+                defer zgui.endMenu();
+                if (zgui.menuItem(strings.emulation_menu_items.pause, .{})) {
                     // Handle about action
                 }
-                zgui.endMenu();
-            }
-            if (zgui.beginMenu("Help", true)) {
-                if (zgui.menuItem("About", .{})) {
+                if (zgui.menuItem(strings.emulation_menu_items.stop, .{})) {
                     // Handle about action
                 }
-                zgui.endMenu();
+                if (zgui.menuItem(strings.emulation_menu_items.take_snapshot, .{})) {
+                    // Handle about action
+                }
+                if (zgui.menuItem(strings.emulation_menu_items.config, .{})) {
+                    // Handle about action
+                }
             }
-            zgui.endMenuBar();
+            if (zgui.beginMenu(strings.main_menu_bar.help, true)) {
+                defer zgui.endMenu();
+                if (zgui.menuItem(strings.help_menu_items.about, .{})) {
+                    // Handle about action
+                }
+            }
         }
 
-        main_menu_state.drawMenu(window);
+        main_menu_state.drawMenu(strings);
 
         if (config.show_metric) {
-            // zgui.showMetricsWindow(null);
+            zgui.showMetricsWindow(null);
         }
-
-        // Set the starting window position and size to custom values
 
         zgui.setNextWindowSize(.{
             .w = Nes.SCREEN_SIZE.width,

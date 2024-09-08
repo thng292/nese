@@ -1,8 +1,8 @@
 const std = @import("std");
 const Self = @This();
 const meta = @import("meta.zig");
-const non_serializable_fields = .{"ns"};
-const SelfSerializeable = meta.StructWithout(Self, non_serializable_fields);
+pub const non_serializable_fields = .{"ns"};
+pub const Serializeable = meta.StructWithout(Self, non_serializable_fields);
 
 ns: struct {
     // Not json serializable
@@ -12,6 +12,7 @@ ns: struct {
 },
 
 scale: f32 = 2,
+ui_scale: f32 = 1,
 input_poll_rate: u32 = 400,
 vsync: bool = false,
 emulation_speed: u32 = 100,
@@ -45,7 +46,7 @@ pub fn deinit(self: *Self) void {
     self.ns.games_list.deinit(self.ns.allocator);
 }
 
-fn update_ref(self: *Self) void {
+inline fn update_ref(self: *Self) void {
     self.games = self.ns.games_list.items;
     self.game_dirs = self.ns.game_dirs_list.items;
     std.debug.assert(self.games.len == self.ns.games_list.items.len);
@@ -58,7 +59,7 @@ pub fn load(file: std.fs.File, allocator: std.mem.Allocator) !Self {
     defer allocator.free(file_content);
 
     const parsed = try std.json.parseFromSlice(
-        SelfSerializeable,
+        Serializeable,
         allocator,
         file_content,
         .{
@@ -75,7 +76,7 @@ pub fn load(file: std.fs.File, allocator: std.mem.Allocator) !Self {
         .game_dirs_list = DirList{},
         .games_list = GameList{},
     };
-    // BUG: Deep copy here
+
     try result.ns.game_dirs_list.appendSlice(allocator, parsed.value.game_dirs);
     for (result.ns.game_dirs_list.items) |*dir| {
         dir.* = try allocator.dupe(u8, dir.*);
@@ -92,7 +93,7 @@ pub fn load(file: std.fs.File, allocator: std.mem.Allocator) !Self {
 
 pub fn save(self: Self, file: std.fs.File) !void {
     try std.json.stringify(
-        meta.initStructFrom(SelfSerializeable, self),
+        meta.initStructFrom(Serializeable, self),
         .{ .whitespace = .indent_4 },
         file.writer(),
     );
