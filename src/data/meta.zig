@@ -18,6 +18,9 @@ pub fn StructWithout(comptime original_struct: type, ignore_fields: anytype) typ
             continue;
         }
 
+        if (counter >= fields.len) {
+            @compileError("Some of the fields in ignore_fields is not in the original struct fields");
+        }
         fields[counter] = field;
 
         counter += 1;

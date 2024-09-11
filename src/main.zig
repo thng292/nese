@@ -5,10 +5,11 @@ const zgpu = @import("zgpu");
 const wgpu = zgpu.wgpu;
 const zgui = @import("zgui");
 
-const Config = @import("config.zig");
-const MainMenu = @import("main_menu.zig");
-const Callable = @import("callable.zig").Callable;
-const Strings = @import("i18n.zig");
+const Config = @import("data/config.zig");
+const Strings = @import("data/i18n.zig");
+const Callable = @import("data/callable.zig").Callable;
+const MainMenu = @import("ui/main_menu.zig");
+const MenuBar = @import("ui/menu_bar.zig");
 
 const Nes = @import("nes/nes.zig");
 const CPU = @import("nes/cpu6502.zig");
@@ -21,9 +22,10 @@ pub fn main() !void {
     defer _ = gpa_state.deinit();
     const gpa = gpa_state.allocator();
 
-    const cwd = std.fs.cwd();
+    const shared_string_buffer = try gpa.allocSentinel(u8, 1024, 0);
+    defer gpa.free(shared_string_buffer);
 
-    const strings = Strings{};
+    const cwd = std.fs.cwd();
 
     const config_file = cwd.openFile(config_file_path, .{
         .mode = .read_only,
@@ -42,19 +44,24 @@ pub fn main() !void {
         config.deinit();
     }
 
+    const strings = if (config.language_file_path) |path| blk: {
+        const file = cwd.openFile(path, .{ .mode = .read_only }) catch break :blk Strings{};
+        break :blk Strings.load(file, gpa) catch Strings{};
+    } else Strings{};
+    defer strings.deinit();
+
     try zglfw.init();
     defer zglfw.terminate();
     zglfw.windowHintTyped(.client_api, .no_api);
     std.log.info("Initialized GLFW", .{});
 
     const window = try zglfw.Window.create(
-        @intFromFloat(Nes.SCREEN_SIZE.width * config.scale),
-        @intFromFloat(Nes.SCREEN_SIZE.height * config.scale),
+        @intFromFloat(Nes.SCREEN_SIZE.width * config.game_scale),
+        @intFromFloat(Nes.SCREEN_SIZE.height * config.game_scale),
         "Nese",
         null,
     );
     defer window.destroy();
-    window.setSizeLimits(Nes.SCREEN_SIZE.width, Nes.SCREEN_SIZE.height, -1, -1);
     std.log.info("Created Window", .{});
 
     const gctx = try zgpu.GraphicsContext.create(
@@ -139,24 +146,23 @@ pub fn main() !void {
     };
     var openGameContext = OpenGameContext{};
 
-    var main_menu_state = try MainMenu.init(
-        gpa,
-        &config,
-        MainMenu.OpenGameCallable.init(
-            OpenGameContext.openGame,
-            &openGameContext,
-            null,
-        ),
-    );
+    var main_menu_state = try MainMenu
+        .init(gpa, &config, shared_string_buffer, MainMenu.Callback.init(
+        OpenGameContext.openGame,
+        &openGameContext,
+        null,
+    ));
+
     defer main_menu_state.deinit();
 
     // const frame_deadline = @as(f64, 1) / 60;
     // var frame_accumulated: f64 = 0;
     // var frame_rate: f64 = 0;
     // var start = zglfw.getTime();
+    var exit = false;
 
     std.log.info("Starting main loop", .{});
-    while (!window.shouldClose()) {
+    while (!window.shouldClose() and !exit) {
         zglfw.pollEvents();
         // nes.handleKey(window);
 
@@ -178,43 +184,11 @@ pub fn main() !void {
             gctx.swapchain_descriptor.height,
         );
 
-        if (zgui.beginMainMenuBar()) {
-            defer zgui.endMainMenuBar();
-            if (zgui.beginMenu(strings.main_menu_bar.file, true)) {
-                defer zgui.endMenu();
-                if (zgui.menuItem(strings.file_menu_items.load_game, .{})) {
-                    // Handle open action
-                }
-                if (zgui.menuItem(strings.file_menu_items.load_dir, .{})) {
-                    // Handle open action
-                }
-                if (zgui.menuItem(strings.file_menu_items.exit, .{})) {
-                    return;
-                }
-            }
-            if (zgui.beginMenu(strings.main_menu_bar.emulation, true)) {
-                defer zgui.endMenu();
-                if (zgui.menuItem(strings.emulation_menu_items.pause, .{})) {
-                    // Handle about action
-                }
-                if (zgui.menuItem(strings.emulation_menu_items.stop, .{})) {
-                    // Handle about action
-                }
-                if (zgui.menuItem(strings.emulation_menu_items.take_snapshot, .{})) {
-                    // Handle about action
-                }
-                if (zgui.menuItem(strings.emulation_menu_items.config, .{})) {
-                    // Handle about action
-                }
-            }
-            if (zgui.beginMenu(strings.main_menu_bar.help, true)) {
-                defer zgui.endMenu();
-                if (zgui.menuItem(strings.help_menu_items.about, .{})) {
-                    // Handle about action
-                }
-            }
+        switch (MenuBar.drawMenuBar(false, false, strings)) {
+            .Exit => exit = true,
+            .None => {},
+            else => {},
         }
-
         main_menu_state.draw(strings);
 
         if (config.show_metric) {
@@ -261,7 +235,6 @@ pub fn main() !void {
 }
 
 // https://blog.bearcats.nl/accurate-sleep-function/
-
 fn preciseSleep(time_second: f64) void {
     var time_s = time_second;
     const StaticState = struct {

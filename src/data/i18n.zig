@@ -3,10 +3,6 @@ const meta = @import("meta.zig");
 
 const Self = @This();
 const Str = [:0]const u8;
-pub const non_serializable_fields = .{"parsed"};
-pub const Serializable = meta.StructWithout(Self, non_serializable_fields);
-
-parsed: ?*anyopaque = null,
 
 main_menu_bar: struct {
     file: Str = "File",
@@ -15,8 +11,7 @@ main_menu_bar: struct {
 } = .{},
 
 file_menu_items: struct {
-    load_game: Str = "Load game",
-    load_dir: Str = "Load directory",
+    add_game: Str = "Add game",
     exit: Str = "Exit",
 } = .{},
 
@@ -25,6 +20,7 @@ emulation_menu_items: struct {
     pause: Str = "Pause",
     stop: Str = "Stop",
     take_snapshot: Str = "Take snapshot",
+    full_screen: Str = "Full screen",
     config: Str = "Config",
 } = .{},
 
@@ -54,30 +50,3 @@ add_game_popup: struct {
     @"error": Str = "Error",
     cancel: Str = "Cancel",
 } = .{},
-
-pub fn deinit(self: Self) void {
-    if (self.parsed) |parsed_| {
-        const parsed: *std.json.Parsed(Serializable) = @ptrCast(parsed_);
-        parsed.deinit();
-    }
-}
-
-pub fn save(self: Self, file: std.fs.File) !void {
-    try std.json.stringify(self, .{ .whitespace = .indent_4 }, file.writer());
-}
-
-pub fn load(file: std.fs.File, allocator: std.mem.Allocator) !void {
-    const file_content = file.readToEndAlloc(allocator, std.json.default_max_value_len);
-    const parsed = try std.json.parseFromSlice(
-        Self,
-        allocator,
-        file_content,
-        .{
-            .allocate = .alloc_if_needed,
-            .duplicate_field_behavior = .use_last,
-            .ignore_unknown_fields = true,
-        },
-    );
-
-    return parsed.value;
-}

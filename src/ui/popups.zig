@@ -1,9 +1,9 @@
 const std = @import("std");
 const zgui = @import("zgui");
 
-const Strings = @import("i18n.zig");
-const Callable = @import("callable.zig").Callable;
-const Config = @import("config.zig");
+const Strings = @import("../data/i18n.zig");
+const Callable = @import("../data/callable.zig").Callable;
+const Config = @import("../data/config.zig");
 
 pub const AddGamePopup = struct {
     pub const Callback = Callable(fn ([]u8) anyerror!void);
@@ -13,7 +13,6 @@ pub const AddGamePopup = struct {
     @"error": ?anyerror = null,
 
     pub fn draw(self: *AddGamePopup, strings: Strings) void {
-        zgui.setNextWindowSize(.{ .cond = .always, .w = 300, .h = -1 });
         const is_change_path = zgui.beginPopupModal(strings.add_game_popup.change_path, .{});
         const is_add_game = zgui.beginPopupModal(strings.add_game_popup.add_game, .{});
         if (is_change_path or is_add_game) {
@@ -36,8 +35,7 @@ pub const AddGamePopup = struct {
                     strings.add_game_popup.change_path,
                 .{},
             )) {
-                const strlen = std.mem.indexOfSentinel(u8, 0, self.path_buffer);
-                if (self.callback.call(.{self.path_buffer[0..strlen]})) {
+                if (self.callback.call(.{std.mem.span(self.path_buffer.ptr)})) {
                     @memset(self.path_buffer, 0);
                     zgui.closeCurrentPopup();
                 } else |e| {
@@ -48,10 +46,9 @@ pub const AddGamePopup = struct {
             zgui.sameLine(.{ .spacing = 4 });
 
             if (zgui.button(strings.add_game_popup.cancel, .{}) or zgui.isKeyDown(.escape)) {
+                @memset(self.path_buffer, 0);
                 zgui.closeCurrentPopup();
             }
         }
     }
 };
-
-pub const ManageDirectoryPopup = struct {};

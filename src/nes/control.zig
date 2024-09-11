@@ -2,8 +2,6 @@ const std = @import("std");
 const zglfw = @import("zglfw");
 
 pub const ControllerMap = struct {
-    state: u8 = 0,
-    buffer: u8 = 0,
     A: zglfw.Key = .space,
     B: zglfw.Key = .left_shift,
     Select: zglfw.Key = .left_control,
@@ -12,38 +10,44 @@ pub const ControllerMap = struct {
     Down: zglfw.Key = .s,
     Left: zglfw.Key = .a,
     Right: zglfw.Key = .d,
+};
 
-    pub inline fn updateState(self: *ControllerMap) void {
+pub const ControllerState = struct {
+    state: u8 = 0,
+    buffer: u8 = 0,
+    map: ControllerMap = .{},
+
+    pub inline fn updateState(self: *ControllerState) void {
         self.state = self.buffer;
     }
 
-    pub inline fn handleKey(self: *ControllerMap, window: *zglfw.Window) void {
+    pub inline fn handleKey(self: *ControllerState, window: *zglfw.Window) void {
         var mask: u8 = 0;
-        if (window.getKey(self.A) == .press) mask |= 0x80;
-        if (window.getKey(self.B) == .press) mask |= 0x40;
-        if (window.getKey(self.Select) == .press) mask |= 0x20;
-        if (window.getKey(self.Start) == .press) mask |= 0x10;
-        if (window.getKey(self.Up) == .press) mask |= 0x08;
-        if (window.getKey(self.Down) == .press) mask |= 0x04;
-        if (window.getKey(self.Left) == .press) mask |= 0x02;
-        if (window.getKey(self.Right) == .press) mask |= 0x01;
+        if (window.getKey(self.map.A) == .press) mask |= 0x80;
+        if (window.getKey(self.map.B) == .press) mask |= 0x40;
+        if (window.getKey(self.map.Select) == .press) mask |= 0x20;
+        if (window.getKey(self.map.Start) == .press) mask |= 0x10;
+        if (window.getKey(self.map.Up) == .press) mask |= 0x08;
+        if (window.getKey(self.map.Down) == .press) mask |= 0x04;
+        if (window.getKey(self.map.Left) == .press) mask |= 0x02;
+        if (window.getKey(self.map.Right) == .press) mask |= 0x01;
 
-        if (window.getKey(self.A) == .release) mask &= (0xFF ^ 0x80);
-        if (window.getKey(self.B) == .release) mask &= (0xFF ^ 0x40);
-        if (window.getKey(self.Select) == .release) mask &= (0xFF ^ 0x20);
-        if (window.getKey(self.Start) == .release) mask &= (0xFF ^ 0x10);
-        if (window.getKey(self.Up) == .release) mask &= (0xFF ^ 0x08);
-        if (window.getKey(self.Down) == .release) mask &= (0xFF ^ 0x04);
-        if (window.getKey(self.Left) == .release) mask &= (0xFF ^ 0x02);
-        if (window.getKey(self.Right) == .release) mask &= (0xFF ^ 0x01);
+        if (window.getKey(self.map.A) == .release) mask &= (0xFF ^ 0x80);
+        if (window.getKey(self.map.B) == .release) mask &= (0xFF ^ 0x40);
+        if (window.getKey(self.map.Select) == .release) mask &= (0xFF ^ 0x20);
+        if (window.getKey(self.map.Start) == .release) mask &= (0xFF ^ 0x10);
+        if (window.getKey(self.map.Up) == .release) mask &= (0xFF ^ 0x08);
+        if (window.getKey(self.map.Down) == .release) mask &= (0xFF ^ 0x04);
+        if (window.getKey(self.map.Left) == .release) mask &= (0xFF ^ 0x02);
+        if (window.getKey(self.map.Right) == .release) mask &= (0xFF ^ 0x01);
 
         self.buffer = mask;
     }
 };
 
 const Control = @This();
-controller1: ControllerMap = ControllerMap{},
-controller2: ControllerMap = ControllerMap{},
+controller1: ControllerState = ControllerState{},
+controller2: ControllerState = ControllerState{},
 
 pub inline fn read(self: *Control, addr: u16) u8 {
     const controller = if (addr == 0x4016) &self.controller1 else &self.controller2;

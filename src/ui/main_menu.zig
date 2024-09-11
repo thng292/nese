@@ -3,9 +3,9 @@ const builtin = @import("builtin");
 const zgui = @import("zgui");
 const zglfw = @import("zglfw");
 
-const Strings = @import("i18n.zig");
-const Callable = @import("callable.zig").Callable;
-const Config = @import("config.zig");
+const Strings = @import("../data/i18n.zig");
+const Callable = @import("../data/callable.zig").Callable;
+const Config = @import("../data/config.zig");
 const ChangeGamePathPopup = @import("popups.zig").AddGamePopup;
 const Self = @This();
 
@@ -15,7 +15,7 @@ arena: std.heap.ArenaAllocator,
 buffer: [:0]u8,
 config: *Config,
 change_path_popup: ChangeGamePathPopup,
-open_game_callable: OpenGameCallable,
+open_game_callable: Callback,
 selected: usize = max_usize,
 hovering: usize = max_usize,
 renaming: usize = max_usize,
@@ -32,10 +32,13 @@ table_flags: zgui.TableFlags = .{
 },
 row_pad: struct { x: f32 = 32, y: f32 = 16 } = .{},
 
-pub fn init(allocator: std.mem.Allocator, config: *Config, callback: OpenGameCallable) !Self {
-    var arena = std.heap.ArenaAllocator.init(allocator);
-    const buffer = try arena.child_allocator.allocSentinel(u8, 1024, 0);
-    @memset(buffer, 0);
+pub fn init(
+    allocator: std.mem.Allocator,
+    config: *Config,
+    buffer: [:0]u8,
+    callback: Callback,
+) !Self {
+    const arena = std.heap.ArenaAllocator.init(allocator);
     return Self{
         .config = config,
         .open_game_callable = callback,
@@ -51,7 +54,6 @@ pub fn init(allocator: std.mem.Allocator, config: *Config, callback: OpenGameCal
 }
 
 pub fn deinit(self: *Self) void {
-    self.arena.child_allocator.free(self.buffer);
     self.arena.deinit();
 }
 
@@ -135,14 +137,13 @@ inline fn drawGameRow(
     _ = zgui.tableNextColumn();
     if (self.renaming == i) {
         if (zgui.inputText("##RenameInput", .{
-            .buf = self.buffer,
+            .buf = @ptrCast(self.buffer),
             .flags = zgui.InputTextFlags{
                 .auto_select_all = true,
                 .enter_returns_true = true,
             },
         })) {
-            const strlen = std.mem.indexOfSentinel(u8, 0, self.buffer);
-            self.config.renameGameCopy(i, self.buffer[0..strlen]) catch {};
+            self.config.renameGameCopy(i, std.mem.span(self.buffer.ptr)) catch {};
             self.renaming = max_usize;
             @memset(self.buffer, 0);
         }
@@ -241,6 +242,7 @@ inline fn drawContextMenu(self: *Self, strings: Strings) void {
         }
         if (zgui.menuItem(strings.main_menu_context_menu.rename, .{})) {
             self.renaming = self.hovering;
+            @memset(self.buffer, 0);
             std.mem.copyForwards(
                 u8,
                 self.buffer,
@@ -250,6 +252,7 @@ inline fn drawContextMenu(self: *Self, strings: Strings) void {
 
         if (zgui.menuItem(strings.main_menu_context_menu.change_path, .{})) {
             self.changing = self.hovering;
+            @memset(self.buffer, 0);
             std.mem.copyForwards(u8, self.buffer, self.config.games[self.changing].path);
             self.change_path_popup.callback.context = self;
             should_popup = true;
@@ -281,5 +284,5 @@ inline fn drawTableHeader(strings: Strings) void {
 }
 
 const nes_file_extentions = .{".nes"};
-pub const OpenGameCallable = Callable(fn (file_path: []u8) void);
+pub const Callback = Callable(fn (file_path: []u8) void);
 const context_menu_id = "MainMenu_ContextMenu";

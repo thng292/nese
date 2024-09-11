@@ -1,57 +1,7 @@
 const std = @import("std");
 const Bus = @import("bus.zig").Bus;
 
-pub const NESConsoleFamily = enum(u2) { NES, VS, PlayChoice10, Extended };
-
-pub const TimingMode = enum(u2) {
-    RP2C02,
-    RP2C07,
-    Multiple_region,
-    UA6538,
-};
-
-pub const Header = packed struct(u128) {
-    name: u32,
-    PRG_ROM_Size: u8,
-    CHR_ROM_Size: u8,
-    // Flag 6
-    mirroring: bool,
-    hasPersistentMem: bool,
-    hasTrainer: bool,
-    fourScreenVram: bool,
-    mapperNumLo: u4,
-
-    // Flag 7
-    consoleFam: NESConsoleFamily,
-    version: u2,
-    mapperNumHi: u4,
-
-    // Flag 8
-    PRG_RAM_Size: u8,
-
-    __unused09: u8,
-    __unused10: u8,
-    __unused11: u8,
-    __unused12: u8,
-    __unused13: u8,
-    __unused14: u8,
-    __unused15: u8,
-
-    pub fn getPRGROMSize(self: *const Header) u32 {
-        return @as(u32, self.PRG_ROM_Size) * BANK_16KB;
-    }
-
-    pub fn getCHRROMSize(self: *const Header) u32 {
-        return @as(u32, self.CHR_ROM_Size) * BANK_8KB;
-    }
-
-    pub fn getMapperID(self: *const Header) u8 {
-        var res: u8 = self.mapperNumHi;
-        res <<= 4;
-        res |= self.mapperNumLo;
-        return res;
-    }
-};
+pub const save_path = "saves/";
 
 pub const ROM = struct {
     header: Header,
@@ -157,6 +107,58 @@ pub const ROM = struct {
     }
 };
 
+pub const NESConsoleFamily = enum(u2) { NES, VS, PlayChoice10, Extended };
+
+pub const TimingMode = enum(u2) {
+    RP2C02,
+    RP2C07,
+    Multiple_region,
+    UA6538,
+};
+
+pub const Header = packed struct(u128) {
+    name: u32,
+    PRG_ROM_Size: u8,
+    CHR_ROM_Size: u8,
+    // Flag 6
+    mirroring: bool,
+    hasPersistentMem: bool,
+    hasTrainer: bool,
+    fourScreenVram: bool,
+    mapperNumLo: u4,
+
+    // Flag 7
+    consoleFam: NESConsoleFamily,
+    version: u2,
+    mapperNumHi: u4,
+
+    // Flag 8
+    PRG_RAM_Size: u8,
+
+    __unused09: u8,
+    __unused10: u8,
+    __unused11: u8,
+    __unused12: u8,
+    __unused13: u8,
+    __unused14: u8,
+    __unused15: u8,
+
+    pub fn getPRGROMSize(self: *const Header) u32 {
+        return @as(u32, self.PRG_ROM_Size) * BANK_16KB;
+    }
+
+    pub fn getCHRROMSize(self: *const Header) u32 {
+        return @as(u32, self.CHR_ROM_Size) * BANK_8KB;
+    }
+
+    pub fn getMapperID(self: *const Header) u8 {
+        var res: u8 = self.mapperNumHi;
+        res <<= 4;
+        res |= self.mapperNumLo;
+        return res;
+    }
+};
+
 inline fn debug(src: std.builtin.SourceLocation) void {
     if (comptime @import("builtin").mode == .Debug) {
         std.debug.print("{s}: {}, {}\n", .{ src.file, src.line, src.column });
@@ -167,8 +169,6 @@ const BANK_4KB: u32 = 0x1000;
 const BANK_8KB: u32 = BANK_4KB * 2;
 const BANK_16KB: u32 = BANK_8KB * 2;
 const BANK_32KB: u32 = BANK_16KB * 2;
-
-const save_path = "saves/";
 
 pub fn jenkinsHash(in: []const u8) u32 {
     var hash: u32 = 0;

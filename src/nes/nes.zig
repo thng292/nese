@@ -71,7 +71,7 @@ pub fn startup(self: *Nes, apu: APU) !void {
         .ram = Ram{},
         .ppu = try PPU.init(mapper),
         .control = Control{
-            .controller2 = .{
+            .controller2 = .{ .map = .{
                 .Up = .up,
                 .Down = .down,
                 .Left = .left,
@@ -80,7 +80,7 @@ pub fn startup(self: *Nes, apu: APU) !void {
                 .B = .k,
                 .Start = .slash,
                 .Select = .l,
-            },
+            } },
         },
         .apu = apu,
     };
