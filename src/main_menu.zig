@@ -6,16 +6,20 @@ const zglfw = @import("zglfw");
 const Strings = @import("i18n.zig");
 const Callable = @import("callable.zig").Callable;
 const Config = @import("config.zig");
+const ChangeGamePathPopup = @import("popups.zig").AddGamePopup;
 const Self = @This();
+
 const max_usize = std.math.maxInt(usize);
 
 arena: std.heap.ArenaAllocator,
+buffer: [:0]u8,
 config: *Config,
+change_path_popup: ChangeGamePathPopup,
 open_game_callable: OpenGameCallable,
 selected: usize = max_usize,
 hovering: usize = max_usize,
 renaming: usize = max_usize,
-rename_buf: [256:0]u8 = std.mem.zeroes([256:0]u8),
+changing: usize = max_usize,
 
 table_flags: zgui.TableFlags = .{
     .sortable = false,
@@ -28,19 +32,30 @@ table_flags: zgui.TableFlags = .{
 },
 row_pad: struct { x: f32 = 32, y: f32 = 16 } = .{},
 
-pub fn init(allocator: std.mem.Allocator, config: *Config, callback: OpenGameCallable) Self {
+pub fn init(allocator: std.mem.Allocator, config: *Config, callback: OpenGameCallable) !Self {
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    const buffer = try arena.child_allocator.allocSentinel(u8, 1024, 0);
+    @memset(buffer, 0);
     return Self{
         .config = config,
         .open_game_callable = callback,
-        .arena = std.heap.ArenaAllocator.init(allocator),
+        .arena = arena,
+        .buffer = buffer,
+        .change_path_popup = ChangeGamePathPopup{
+            .config = config,
+            .callback = ChangeGamePathPopup.Callback
+                .init(Self.changeGamePath, null, null),
+            .path_buffer = buffer,
+        },
     };
 }
 
 pub fn deinit(self: *Self) void {
+    self.arena.child_allocator.free(self.buffer);
     self.arena.deinit();
 }
 
-pub fn drawMenu(self: *Self, strings: Strings) void {
+pub fn draw(self: *Self, strings: Strings) void {
     _ = self.arena.reset(.retain_capacity);
     const view_port = zgui.getMainViewport();
     const view_port_size = view_port.getWorkSize();
@@ -67,6 +82,10 @@ pub fn drawMenu(self: *Self, strings: Strings) void {
         if (!style_popped) {
             zgui.popStyleVar(.{});
         }
+    }
+
+    if (self.renaming != max_usize and zgui.isKeyDown(.escape)) {
+        self.renaming = max_usize;
     }
 
     if (zgui.begin("Main Menu", .{ .flags = .{
@@ -98,6 +117,7 @@ pub fn drawMenu(self: *Self, strings: Strings) void {
             }
 
             self.drawContextMenu(strings);
+            self.change_path_popup.draw(strings);
         }
     }
 }
@@ -115,17 +135,16 @@ inline fn drawGameRow(
     _ = zgui.tableNextColumn();
     if (self.renaming == i) {
         if (zgui.inputText("##RenameInput", .{
-            .buf = &self.rename_buf,
+            .buf = self.buffer,
             .flags = zgui.InputTextFlags{
                 .auto_select_all = true,
                 .enter_returns_true = true,
             },
-            .callback = null,
-            .user_data = null,
         })) {
-            const strlen = std.mem.indexOfSentinel(u8, 0, &self.rename_buf);
-            self.config.renameGameCopy(i, self.rename_buf[0..strlen]) catch {};
+            const strlen = std.mem.indexOfSentinel(u8, 0, self.buffer);
+            self.config.renameGameCopy(i, self.buffer[0..strlen]) catch {};
             self.renaming = max_usize;
+            @memset(self.buffer, 0);
         }
     } else {
         zgui.textWrapped("{s}", .{game.name});
@@ -141,7 +160,7 @@ inline fn drawGameRow(
     const checkbox_label = blk: {
         const allocator = self.arena.allocator();
         if (comptime builtin.mode == .Debug) {
-            break :blk std.fmt.allocPrintZ(allocator, "##MainMenu_CheckBox_{}", .{i});
+            break :blk std.fmt.allocPrintZ(allocator, "##MainMenu_FavoriteCheckBox_{}", .{i});
         } else {
             break :blk std.fmt.allocPrintZ(allocator, "##CB{}", .{i});
         }
@@ -150,7 +169,7 @@ inline fn drawGameRow(
     };
 
     if (zgui.checkbox(checkbox_label, .{ .v = &game.is_favorite })) {
-        self.config.updateGameListAfterInlineChange();
+        self.config.sortGames();
     }
     row_height = @max(row_height, zgui.getItemRectSize()[1] + self.row_pad.y * 2);
 
@@ -206,6 +225,7 @@ inline fn drawGameRow(
 }
 
 inline fn drawContextMenu(self: *Self, strings: Strings) void {
+    var should_popup = false;
     if (zgui.beginPopup(context_menu_id, .{})) {
         defer zgui.endPopup();
         if (zgui.menuItem(strings.main_menu_context_menu.open, .{})) {
@@ -223,11 +243,28 @@ inline fn drawContextMenu(self: *Self, strings: Strings) void {
             self.renaming = self.hovering;
             std.mem.copyForwards(
                 u8,
-                &self.rename_buf,
+                self.buffer,
                 self.config.games[self.renaming].name,
             );
         }
+
+        if (zgui.menuItem(strings.main_menu_context_menu.change_path, .{})) {
+            self.changing = self.hovering;
+            std.mem.copyForwards(u8, self.buffer, self.config.games[self.changing].path);
+            self.change_path_popup.callback.context = self;
+            should_popup = true;
+        }
     }
+    if (should_popup) {
+        zgui.openPopup(strings.add_game_popup.change_path, .{});
+    }
+}
+
+fn changeGamePath(self_: *anyopaque, path: []u8) !void {
+    var self: *Self = @ptrCast(@alignCast(self_));
+    try std.fs.cwd().access(path, .{ .mode = .read_only });
+    try self.config.changePathCopy(self.changing, path);
+    self.changing = max_usize;
 }
 
 inline fn drawTableHeader(strings: Strings) void {

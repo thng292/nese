@@ -117,7 +117,7 @@ pub fn addGame(self: *Self, path: []u8) !void {
             .is_favorite = false,
         },
     );
-    self.shortGames();
+    self.sortGames();
     self.update_ref();
 }
 
@@ -130,7 +130,7 @@ pub fn removeGame(self: *Self, index: usize) void {
     const game = self.games[index];
     _ = self.ns.games_list.orderedRemove(index);
     game.deinit(self.ns.allocator);
-    self.shortGames();
+    self.sortGames();
     self.update_ref();
 }
 
@@ -138,7 +138,7 @@ pub fn renameGame(self: *Self, index: usize, new_name: []u8) void {
     const game = &self.games[index];
     self.ns.allocator.free(game.name);
     game.name = new_name;
-    self.shortGames();
+    self.sortGames();
 }
 
 pub fn renameGameCopy(self: *Self, index: usize, new_name: []u8) !void {
@@ -146,13 +146,30 @@ pub fn renameGameCopy(self: *Self, index: usize, new_name: []u8) !void {
     self.renameGame(index, new_name_mem);
 }
 
-pub fn toggleFavorite(self: *Self, index: usize) void {
-    self.ns.games_list.items[index].is_favorite = !self.ns.games_list.items[index].is_favorite;
-    self.shortGames();
+pub fn changePath(self: *Self, index: usize, new_path: []u8) void {
+    self.ns.games_list.items[index].path = new_path;
 }
 
-pub fn updateGameListAfterInlineChange(self: *Self) void {
-    self.shortGames();
+pub fn changePathCopy(self: *Self, index: usize, new_path: []u8) !void {
+    const path = try self.ns.allocator.dupe(u8, new_path);
+    self.changePath(index, path);
+}
+
+pub fn toggleFavorite(self: *Self, index: usize) void {
+    self.ns.games_list.items[index].is_favorite = !self.ns.games_list.items[index].is_favorite;
+    self.sortGames();
+}
+
+pub fn sortGames(self: *Self) void {
+    const funtions = struct {
+        fn gameLessthan(_: void, lhs: Game, rhs: Game) bool {
+            if (lhs.is_favorite == rhs.is_favorite) {
+                return std.mem.lessThan(u8, lhs.name, rhs.name);
+            }
+            return @intFromBool(lhs.is_favorite) > @intFromBool(rhs.is_favorite);
+        }
+    };
+    std.mem.sort(Game, self.ns.games_list.items, {}, funtions.gameLessthan);
 }
 
 fn scanDirectory(self: *Self, path: []u8) !void {
@@ -206,18 +223,6 @@ fn checkGameExists(self: Self, path: []u8) bool {
         }
     }
     return false;
-}
-
-fn shortGames(self: *Self) void {
-    const funtions = struct {
-        fn gameLessthan(_: void, lhs: Game, rhs: Game) bool {
-            if (lhs.is_favorite == rhs.is_favorite) {
-                return std.mem.lessThan(u8, lhs.name, rhs.name);
-            }
-            return @intFromBool(lhs.is_favorite) > @intFromBool(rhs.is_favorite);
-        }
-    };
-    std.mem.sort(Game, self.ns.games_list.items, {}, funtions.gameLessthan);
 }
 
 const GameList = std.ArrayListUnmanaged(Game);

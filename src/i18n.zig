@@ -44,6 +44,15 @@ main_menu_context_menu: struct {
     mark_favorite: Str = "Add to favorite",
     unmark_favorite: Str = "Remove from favorite",
     rename: Str = "Rename",
+    change_path: Str = "Change Path",
+} = .{},
+
+add_game_popup: struct {
+    game_path: Str = "Game Path",
+    add_game: Str = "Add game",
+    change_path: Str = "Update path",
+    @"error": Str = "Error",
+    cancel: Str = "Cancel",
 } = .{},
 
 pub fn deinit(self: Self) void {

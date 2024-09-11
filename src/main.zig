@@ -139,7 +139,7 @@ pub fn main() !void {
     };
     var openGameContext = OpenGameContext{};
 
-    var main_menu_state = MainMenu.init(
+    var main_menu_state = try MainMenu.init(
         gpa,
         &config,
         MainMenu.OpenGameCallable.init(
@@ -215,7 +215,7 @@ pub fn main() !void {
             }
         }
 
-        main_menu_state.drawMenu(strings);
+        main_menu_state.draw(strings);
 
         if (config.show_metric) {
             zgui.showMetricsWindow(null);
