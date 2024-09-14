@@ -50,3 +50,21 @@ add_game_popup: struct {
     @"error": Str = "Error",
     cancel: Str = "Cancel",
 } = .{},
+
+config_menu: struct {
+    tab_general: Str = "General",
+    tab_game: Str = "Game",
+    tab_control: Str = "Control",
+    dpad_up: Str = "D-Pad Up",
+    dpad_down: Str = "D-Pad Down",
+    dpad_left: Str = "D-Pad Left",
+    dpad_right: Str = "D-Pad Right",
+    button_start: Str = "Start",
+    button_sellect: Str = "Select",
+    button_A: Str = "A",
+    button_B: Str = "B",
+} = .{},
+
+pub fn save(self: Self, file: std.fs.File) !void {
+    try std.json.stringify(self, .{ .whitespace = .indent_4 }, file.writer());
+}

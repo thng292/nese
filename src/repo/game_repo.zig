@@ -13,19 +13,18 @@ const save_file_name = "games.json";
 const save_file_path = save_dir ++ save_file_name;
 const bytes_limit = std.math.maxInt(u20); // 1GB
 
-ns: struct {
-    // Not json serializable
-    allocator: std.mem.Allocator,
-    games_list: GameList = .{},
-    game_dirs_list: DirList = .{}, // Path to the directory containing the games
-},
+const SaveData = struct {
+    games: []const Game,
+    game_dirs: []const []const u8,
+};
 
-games: []Game,
-game_dirs: [][]const u8,
+allocator: std.mem.Allocator,
+games_list: GameList = .{},
+game_dirs_list: DirList = .{}, // Path to the directory containing the games
 
 pub fn init(allocator: std.mem.Allocator) !Self {
-    const games_list = GameList.init(allocator);
-    const game_dirs_list = DirList.init(allocator);
+    var games_list = GameList{};
+    var game_dirs_list = DirList{};
 
     const cwd = std.fs.cwd();
     cwd.access(save_dir, .{ .mode = .read_write }) catch {
@@ -34,13 +33,15 @@ pub fn init(allocator: std.mem.Allocator) !Self {
     var should_load = true;
     cwd.access(save_file_path, .{ .mode = .read_write }) catch {
         should_load = false;
+        const tmp = try cwd.createFile(save_file_path, .{});
+        tmp.close();
     };
 
     if (should_load) {
         const file_content = try cwd.readFileAlloc(allocator, save_file_path, bytes_limit);
         defer allocator.free(file_content);
         const parsed = try std.json.parseFromSlice(
-            Serializable,
+            SaveData,
             allocator,
             file_content,
             .{
@@ -51,18 +52,24 @@ pub fn init(allocator: std.mem.Allocator) !Self {
         );
         defer parsed.deinit();
 
-        games_list.appendSlice(parsed.value.games);
-        game_dirs_list.appendSlice(parsed.value.game_dirs_list);
+        try games_list.appendSlice(allocator, parsed.value.games);
+        for (games_list.items) |*game| {
+            game.name = try allocator.dupe(u8, game.name);
+            game.path = try allocator.dupe(u8, game.path);
+        }
+        try game_dirs_list.appendSlice(allocator, parsed.value.game_dirs);
+        for (game_dirs_list.items) |*dir| {
+            dir.* = try allocator.dupe(u8, dir.*);
+        }
+
+        std.log.info("Loaded games from file: {s}", .{save_file_path});
+        std.log.info("{}", .{parsed.value});
     }
 
     return Self{
-        .ns = .{
-            .allocator = allocator,
-            .game_dirs_list = game_dirs_list,
-            .games_list = games_list,
-        },
-        .game_dirs = game_dirs_list.items,
-        .games = games_list.items,
+        .allocator = allocator,
+        .game_dirs_list = game_dirs_list,
+        .games_list = games_list,
     };
 }
 
@@ -72,24 +79,33 @@ pub fn deinit(self: *Self) void {
         save_file_path,
         .{ .mode = .write_only },
     )) |file| {
-        self.save(file);
+        self.save(file) catch {};
     } else |_| {}
-    for (self.ns.games_list.items) |game| {
-        game.deinit(self.ns.allocator);
+
+    for (self.getGames()) |game| {
+        game.deinit(self.allocator);
     }
-    for (self.ns.game_dirs_list.items) |dir| {
-        self.ns.allocator.free(dir);
+    self.games_list.deinit(self.allocator);
+    for (self.getDirs()) |dir| {
+        self.allocator.free(dir);
     }
+    self.game_dirs_list.deinit(self.allocator);
 }
 
-pub fn save(self: Self, file: std.fs.File) void {
-    const serializable = meta.initStructFrom(Serializable, self);
-    std.json.stringify(serializable, .{ .whitespace = .indent_4 }, file.writer());
+pub fn save(self: Self, file: std.fs.File) !void {
+    const save_data = SaveData{
+        .game_dirs = self.getDirs(),
+        .games = self.getGames(),
+    };
+    try std.json.stringify(save_data, .{ .whitespace = .indent_4 }, file.writer());
 }
 
-inline fn update_ref(self: *Self) void {
-    self.games = self.ns.games_list.items;
-    self.game_dirs = self.ns.game_dirs_list.items;
+pub fn getGames(self: Self) []const Game {
+    return self.games_list.items;
+}
+
+pub fn getDirs(self: Self) []const []const u8 {
+    return self.game_dirs_list.items;
 }
 
 fn addGame(self: *Self, path: []const u8) !void {
@@ -97,10 +113,10 @@ fn addGame(self: *Self, path: []const u8) !void {
         return;
     }
     const name = std.fs.path.basename(path);
-    const name_mem = try self.ns.allocator.dupe(u8, name[0 .. name.len - 4]);
+    const name_mem = try self.allocator.dupe(u8, name[0 .. name.len - 4]);
 
-    try self.ns.games_list.append(
-        self.ns.allocator,
+    try self.games_list.append(
+        self.allocator,
         Game{
             .path = path,
             .name = name_mem,
@@ -111,45 +127,43 @@ fn addGame(self: *Self, path: []const u8) !void {
         },
     );
     self.sortGames();
-    self.update_ref();
 }
 
 pub fn addGameCopy(self: *Self, path: []const u8) !void {
-    const path_mem = try self.ns.allocator.dupe(u8, path);
+    const path_mem = try self.allocator.dupe(u8, path);
     try self.addGame(path_mem);
 }
 
 pub fn removeGame(self: *Self, index: usize) void {
-    const game = self.games[index];
-    _ = self.ns.games_list.orderedRemove(index);
-    game.deinit(self.ns.allocator);
+    const game = self.getGames()[index];
+    _ = self.games_list.orderedRemove(index);
+    game.deinit(self.allocator);
     self.sortGames();
-    self.update_ref();
 }
 
 fn renameGame(self: *Self, index: usize, new_name: []const u8) void {
-    const game = &self.games[index];
-    self.ns.allocator.free(game.name);
+    var game = &self.games_list.items[index];
+    self.allocator.free(game.name);
     game.name = new_name;
     self.sortGames();
 }
 
 pub fn renameGameCopy(self: *Self, index: usize, new_name: []const u8) !void {
-    const new_name_mem = try self.ns.allocator.dupe(u8, new_name);
+    const new_name_mem = try self.allocator.dupe(u8, new_name);
     self.renameGame(index, new_name_mem);
 }
 
 fn changePath(self: *Self, index: usize, new_path: []const u8) void {
-    self.ns.games_list.items[index].path = new_path;
+    self.games_list.items[index].path = new_path;
 }
 
 pub fn changePathCopy(self: *Self, index: usize, new_path: []const u8) !void {
-    const path = try self.ns.allocator.dupe(u8, new_path);
+    const path = try self.allocator.dupe(u8, new_path);
     self.changePath(index, path);
 }
 
 pub fn toggleFavorite(self: *Self, index: usize) void {
-    self.ns.games_list.items[index].is_favorite = !self.ns.games_list.items[index].is_favorite;
+    self.games_list.items[index].is_favorite = !self.games_list.items[index].is_favorite;
     self.sortGames();
 }
 
@@ -162,26 +176,23 @@ pub fn sortGames(self: *Self) void {
             return @intFromBool(lhs.is_favorite) > @intFromBool(rhs.is_favorite);
         }
     };
-    std.mem.sort(Game, self.ns.games_list.items, {}, funtions.gameLessthan);
+    std.mem.sort(Game, self.games_list.items, {}, funtions.gameLessthan);
 }
 
 fn scanDirectory(self: *Self, path: []const u8) !void {
-    const dir = try std.fs.openDirAbsolute(
-        path,
-        .{ .iterate = true },
-    );
-    var walker = try dir.walk(self.ns.allocator);
+    const dir = try std.fs.openDirAbsolute(path, .{
+        .iterate = true,
+    });
+    var walker = try dir.walk(self.allocator);
     defer walker.deinit();
 
     while (try walker.next()) |entry| {
         if (entry.kind == .file) {
             if (std.mem.endsWith(u8, entry.path, ".nes")) {
-                var abs_path = try self.ns.allocator.alloc(
-                    u8,
-                    path.len + entry.path.len,
+                const abs_path = try std.fs.path.join(
+                    self.allocator,
+                    &[_][]const u8{ path, entry.path },
                 );
-                std.mem.copyForwards(u8, abs_path, path);
-                std.mem.copyForwards(u8, abs_path[path.len..], entry.path);
                 try self.addGame(abs_path);
             }
         }
@@ -189,28 +200,31 @@ fn scanDirectory(self: *Self, path: []const u8) !void {
 }
 
 fn addDirectory(self: *Self, path: []const u8) !void {
-    try self.ns.game_dirs_list.append(
-        self.ns.allocator,
+    for (self.getDirs()) |dir| {
+        if (std.mem.eql(u8, dir, path)) {
+            return;
+        }
+    }
+    try self.game_dirs_list.append(
+        self.allocator,
         path,
     );
     try self.scanDirectory(path);
-    self.update_ref();
 }
 
 pub fn addDirectoryCopy(self: *Self, path: []const u8) !void {
-    const path_mem = try self.ns.allocator.dupe(u8, path);
+    const path_mem = try self.allocator.dupe(u8, path);
     try self.addDirectory(path_mem);
 }
 
 pub fn rescanDirectories(self: *Self) !void {
-    self.update_ref();
     for (self.game_dirs) |dir| {
         self.scanDirectory(dir);
     }
 }
 
 fn checkGameExists(self: Self, path: []const u8) bool {
-    for (self.games) |game| {
+    for (self.getGames()) |game| {
         if (std.mem.eql(u8, game.path, path)) {
             return true;
         }

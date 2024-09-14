@@ -5,9 +5,14 @@ const zgpu = @import("zgpu");
 const wgpu = zgpu.wgpu;
 const zgui = @import("zgui");
 
+const Callable = @import("data/callable.zig").Callable;
 const Config = @import("data/config.zig");
 const Strings = @import("data/i18n.zig");
-const Callable = @import("data/callable.zig").Callable;
+
+const ConfigRepo = @import("repo/config_repo.zig");
+const GameRepo = @import("repo/game_repo.zig");
+const LanguageRepo = @import("repo/language_repo.zig");
+
 const MainMenu = @import("ui/main_menu.zig");
 const MenuBar = @import("ui/menu_bar.zig");
 
@@ -17,6 +22,11 @@ const APU = @import("nes/apu2A03.zig");
 
 const config_file_path = "./config.json";
 
+const Screen = enum {
+    MainMenuScreen,
+    GameScreen,
+};
+
 pub fn main() !void {
     var gpa_state = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa_state.deinit();
@@ -25,30 +35,26 @@ pub fn main() !void {
     const shared_string_buffer = try gpa.allocSentinel(u8, 1024, 0);
     defer gpa.free(shared_string_buffer);
 
-    const cwd = std.fs.cwd();
+    var config_repo = try ConfigRepo.init(gpa);
+    var language_repo = try LanguageRepo.init(gpa);
+    var game_repo = try GameRepo.init(gpa);
+    // try game_repo.addDirectoryCopy(
+    //     try std.fs.cwd().realpathAlloc(gpa, "test-rom"),
+    // );
 
-    const config_file = cwd.openFile(config_file_path, .{
-        .mode = .read_only,
-    }) catch undefined;
-    var config = Config.load(config_file, gpa) catch
-        try Config.initDefault(gpa);
     defer {
-        var err: anyerror = undefined;
-        if (cwd.openFile(config_file_path, .{ .mode = .write_only })) |file| {
-            config.save(file) catch |e| {
-                err = e;
-            };
-        } else |e| {
-            err = e;
-        }
-        config.deinit();
+        config_repo.deinit();
+        language_repo.deinit();
+        game_repo.deinit();
     }
 
-    const strings = if (config.language_file_path) |path| blk: {
-        const file = cwd.openFile(path, .{ .mode = .read_only }) catch break :blk Strings{};
-        break :blk Strings.load(file, gpa) catch Strings{};
-    } else Strings{};
-    defer strings.deinit();
+    language_repo.loadLangugeFromFile(
+        config_repo.config.general.language_file_path,
+    ) catch {
+        try language_repo.useDefaultLanguage();
+    };
+    const config = &config_repo.config;
+    const strings = &language_repo.parsed.?.value;
 
     try zglfw.init();
     defer zglfw.terminate();
@@ -56,8 +62,8 @@ pub fn main() !void {
     std.log.info("Initialized GLFW", .{});
 
     const window = try zglfw.Window.create(
-        @intFromFloat(Nes.SCREEN_SIZE.width * config.game_scale),
-        @intFromFloat(Nes.SCREEN_SIZE.height * config.game_scale),
+        @intFromFloat(Nes.SCREEN_SIZE.width * config.game.game_scale),
+        @intFromFloat(Nes.SCREEN_SIZE.height * config.game.game_scale),
         "Nese",
         null,
     );
@@ -79,21 +85,6 @@ pub fn main() !void {
         },
         .{ .present_mode = .fifo },
     );
-
-    // const primary_monitor_maybe = zglfw.Monitor.getPrimary();
-    // const refresh_rate = out: {
-    //     if (primary_monitor_maybe) |primary_monitor| {
-    //         if (primary_monitor.getVideoMode()) |video_mode| {
-    //             break :out video_mode.refresh_rate;
-    //         } else |_| {
-    //             try std.fmt.format(stdout_writer, "Can't get video mode! Setting refresh rate to 60", .{});
-    //             break :out 60;
-    //         }
-    //     } else {
-    //         try std.fmt.format(stdout_writer, "No primary monitor found! Setting refresh rate to 60", .{});
-    //         break :out 60;
-    //     }
-    // };
 
     defer gctx.destroy(gpa);
     std.log.info("Created Graphics Context", .{});
@@ -122,7 +113,7 @@ pub fn main() !void {
     defer zgui.backend.deinit();
     std.log.info("Initialized ImGUI's backend", .{});
 
-    zgui.getStyle().scaleAllSizes(scale_factor * config.ui_scale);
+    zgui.getStyle().scaleAllSizes(scale_factor * config.general.ui_scale);
 
     // var arg_it = try std.process.argsWithAllocator(gpa);
     // _ = arg_it.next(); // skip first arg
@@ -135,23 +126,38 @@ pub fn main() !void {
     // var nes = try Nes.init(gpa, rom_file, gctx);
     // defer nes.deinit();
     // try nes.startup(APU{});
-    std.log.info("Initialized Nes", .{});
+
+    var current_screen = Screen.MainMenuScreen;
+    var game_path = std.ArrayList(u8).init(gpa);
+    defer game_path.deinit();
 
     const OpenGameContext = struct {
         const Self = @This();
-        pub fn openGame(self: *Self, game_path: []u8) void {
-            _ = self;
-            std.log.info("Opening: {s}", .{game_path});
+        current_screen: *Screen,
+        game_path: *std.ArrayList(u8),
+
+        pub fn openGame(self: *Self, path: []const u8) void {
+            self.current_screen.* = Screen.GameScreen;
+            self.game_path.clearRetainingCapacity();
+            self.game_path.appendSlice(path) catch std.process.exit(1);
+            std.log.info("Opening: {s}", .{path});
         }
     };
-    var openGameContext = OpenGameContext{};
+    var openGameContext = OpenGameContext{
+        .current_screen = &current_screen,
+        .game_path = &game_path,
+    };
 
-    var main_menu_state = try MainMenu
-        .init(gpa, &config, shared_string_buffer, MainMenu.Callback.init(
-        OpenGameContext.openGame,
-        &openGameContext,
-        null,
-    ));
+    var main_menu_state = try MainMenu.init(
+        gpa,
+        &game_repo,
+        shared_string_buffer,
+        MainMenu.Callback.init(
+            OpenGameContext.openGame,
+            &openGameContext,
+            null,
+        ),
+    );
 
     defer main_menu_state.deinit();
 
@@ -184,15 +190,26 @@ pub fn main() !void {
             gctx.swapchain_descriptor.height,
         );
 
-        switch (MenuBar.drawMenuBar(false, false, strings)) {
+        switch (MenuBar.drawMenuBar(strings.*, .{
+            .in_game = false,
+            .is_pause = false,
+        })) {
             .Exit => exit = true,
             .None => {},
             else => {},
         }
-        main_menu_state.draw(strings);
 
-        if (config.show_metric) {
+        if (config.general.show_metric) {
             zgui.showMetricsWindow(null);
+        }
+
+        switch (current_screen) {
+            .MainMenuScreen => {
+                main_menu_state.draw(strings.*);
+            },
+            .GameScreen => {
+                std.process.cleanExit();
+            },
         }
 
         zgui.setNextWindowSize(.{
@@ -231,37 +248,4 @@ pub fn main() !void {
         gctx.submit(&.{commands});
         _ = gctx.present();
     }
-    // }
-}
-
-// https://blog.bearcats.nl/accurate-sleep-function/
-fn preciseSleep(time_second: f64) void {
-    var time_s = time_second;
-    const StaticState = struct {
-        var estimate: f64 = 5e-3;
-        var mean: f64 = 5e-3;
-        var m2: f64 = 0;
-        var count: u64 = 1;
-    };
-
-    while (time_s > StaticState.estimate) {
-        const start = zglfw.getTime();
-        std.time.sleep(1 * std.time.ns_per_s);
-        const end = zglfw.getTime();
-
-        const observed = end - start;
-        time_s -= observed;
-
-        StaticState.count += 1;
-        const delta = observed - StaticState.mean;
-        StaticState.mean += delta / @as(f64, @floatFromInt(StaticState.count));
-        StaticState.m2 += delta * (observed - StaticState.mean);
-        const stddev = std.math.sqrt(
-            StaticState.m2 / @as(f64, @floatFromInt(StaticState.count)),
-        );
-        StaticState.estimate = StaticState.mean + stddev;
-    }
-
-    const start = zglfw.getTime();
-    while (zglfw.getTime() - start < time_s) {}
 }

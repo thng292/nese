@@ -2,6 +2,7 @@ const std = @import("std");
 const meta = @import("../data/meta.zig");
 
 const Config = @import("../data/config.zig");
+const LanguageRepo = @import("language_repo.zig");
 
 const Self = @This();
 pub const non_serializable_fields = .{"ns"};
@@ -22,6 +23,8 @@ pub fn init(allocator: std.mem.Allocator) !Self {
     var should_load = true;
     cwd.access(save_file_path, .{ .mode = .read_write }) catch {
         should_load = false;
+        const tmp = try cwd.createFile(save_file_path, .{});
+        tmp.close();
     };
 
     const config = if (should_load) blk: {
@@ -40,12 +43,15 @@ pub fn init(allocator: std.mem.Allocator) !Self {
         defer parsed.deinit();
 
         var loaded = parsed.value;
-        loaded.general.language_file_path = allocator.dupe(loaded.general.language_file_path);
+        loaded.general.language_file_path = try allocator.dupe(u8, loaded.general.language_file_path);
 
         break :blk loaded;
     } else Config{ .general = .{
-        .language_file_path = try allocator.alloc(u8, 0),
+        .language_file_path = try allocator.dupe(u8, LanguageRepo.default_language_file_name),
     } };
+
+    std.log.info("Loaded config from file: {s}", .{save_file_path});
+    std.log.info("{}", .{config});
 
     return Self{
         .allocator = allocator,
@@ -59,13 +65,15 @@ pub fn deinit(self: *Self) void {
         save_file_path,
         .{ .mode = .write_only },
     )) |file| {
-        self.save(file);
+        self.save(file) catch |e| {
+            std.debug.print("{s}\n", .{@errorName(e)});
+        };
     } else |_| {}
     self.allocator.free(self.config.general.language_file_path);
 }
 
 pub fn save(self: Self, file: std.fs.File) !void {
-    std.json.stringify(self.config, .{ .whitespace = .indent_4 }, file.writer());
+    try std.json.stringify(self.config, .{ .whitespace = .indent_4 }, file.writer());
 }
 
 pub fn changeLanguageFilePathCopy(self: *Self, path: []const u8) !void {

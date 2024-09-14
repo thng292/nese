@@ -23,14 +23,14 @@ pub fn init(allocator: std.mem.Allocator) !Self {
         try cwd.makeDir(language_dir);
         const file = try cwd.createFile(language_dir ++ default_language_file_name, .{});
         const english = Strings{};
-        english.save(file);
+        try english.save(file);
     };
 
     var result = Self{
         .allocator = allocator,
-        .language_list = LanguageList.init(allocator),
+        .language_list = LanguageList{},
     };
-    result.rescan();
+    try result.rescan();
 
     return result;
 }
@@ -45,18 +45,24 @@ pub fn deinit(self: *Self) void {
     }
 }
 
-pub fn getLanguages(self: *Self) [][]const u8 {
+pub fn getLanguages(self: *Self) []const []const u8 {
     return self.language_list.items;
 }
 
-pub fn getStrings(self: Self) ?Strings {
+pub fn getStrings(self: *const Self) ?*const Strings {
     if (self.parsed) |parsed| {
-        return parsed.value;
+        return &parsed.value;
     }
     return null;
 }
 
-pub fn loadLanguge(self: *Self, index: usize) !void {
+pub fn useDefaultLanguage(self: *Self) !void {
+    const arena = try self.allocator.create(std.heap.ArenaAllocator);
+    arena.* = std.heap.ArenaAllocator.init(self.allocator);
+    self.parsed = .{ .arena = arena, .value = Strings{} };
+}
+
+pub fn loadLangugeFromFile(self: *Self, file_name: []const u8) !void {
     const cwd = std.fs.cwd();
     const dir = try cwd.openDir(
         language_dir,
@@ -64,7 +70,7 @@ pub fn loadLanguge(self: *Self, index: usize) !void {
     );
     const file_content = try dir.readFileAlloc(
         self.allocator,
-        self.getLanguages()[index],
+        file_name,
         bytes_limit,
     );
     defer self.allocator.free(file_content);
@@ -85,54 +91,32 @@ pub fn loadLanguge(self: *Self, index: usize) !void {
     }
 
     self.parsed = new_language;
+    std.log.info("Loaded language from file: {s}", .{file_name});
+    std.log.info("{}", .{self.parsed.?.value});
+}
+
+pub fn switchLanguge(self: *Self, index: usize) !void {
+    try self.loadLangugeFromFile(self.getLanguages()[index]);
 }
 
 pub fn rescan(self: *Self) !void {
+    self.language_list.clearRetainingCapacity();
     const cwd = std.fs.cwd();
     const dir = try cwd.openDir(
-        &language_dir,
+        language_dir,
         .{ .access_sub_paths = false, .iterate = true },
     );
     var iter = dir.iterate();
 
     while (try iter.next()) |entry| {
         if (std.mem.endsWith(u8, entry.name, ".json")) {
-            try self.language_list.append(try self.allocator.dupe(entry.name));
+            try self.language_list.append(
+                self.allocator,
+                try self.allocator.dupe(u8, entry.name),
+            );
         }
     }
 }
-
-pub fn iterate(self: *Self) Iterator {
-    return Iterator{
-        .index = 0,
-        .parent = self,
-    };
-}
-
-const Iterator = struct {
-    index: usize,
-    parent: *Self,
-
-    pub fn next(self: Iterator) ?[]const u8 {
-        const index = self.index;
-        if (index >= self.parent.language_list.items.len) {
-            return null;
-        }
-        self.index += 1;
-        return self.parent.language_list.items[index];
-    }
-
-    pub fn peek(self: Iterator) ?[]const u8 {
-        if (self.index >= self.parent.language_list.items.len) {
-            return null;
-        }
-        return self.parent.language_list.items[self.index];
-    }
-
-    pub fn reset(self: Iterator) void {
-        self.index = 0;
-    }
-};
 
 test "Language Repo" {
     var language_repo = try Self.init(std.testing.allocator);

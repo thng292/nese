@@ -11,11 +11,11 @@ const PPU = @import("ppu2C02.zig");
 const APU = @import("apu2A03.zig");
 
 const Mapper = @import("mapper.zig");
-const Mapper0 = @import("mapper0.zig");
-const Mapper1 = @import("mapper1.zig");
-const Mapper2 = @import("mapper2.zig");
-const Mapper3 = @import("mapper3.zig");
-const Mapper4 = @import("mapper4.zig");
+const Mapper0 = @import("mappers/mapper0.zig");
+const Mapper1 = @import("mappers/mapper1.zig");
+const Mapper2 = @import("mappers/mapper2.zig");
+const Mapper3 = @import("mappers/mapper3.zig");
+const Mapper4 = @import("mappers/mapper4.zig");
 
 const Nes = @This();
 const dot_per_frame = 341 * 262;

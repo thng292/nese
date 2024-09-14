@@ -3,11 +3,9 @@ const zgui = @import("zgui");
 
 const Strings = @import("../data/i18n.zig");
 const Callable = @import("../data/callable.zig").Callable;
-const Config = @import("../data/config.zig");
 
 pub const AddGamePopup = struct {
     pub const Callback = Callable(fn ([]u8) anyerror!void);
-    config: *Config,
     path_buffer: [:0]u8,
     callback: Callback,
     @"error": ?anyerror = null,
