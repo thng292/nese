@@ -36,6 +36,17 @@ pub fn Callable(comptime Callsite_fn: type) type {
         pub fn init(
             function: *const anyopaque,
             context: ?*anyopaque,
+        ) Self {
+            return Self{
+                .function = function,
+                .context = context,
+                .deinit_fn = null,
+            };
+        }
+
+        pub fn initWithDeinitFn(
+            function: *const anyopaque,
+            context: ?*anyopaque,
             deinit_fn: ?*const fn (*anyopaque) void,
         ) Self {
             return Self{
@@ -47,9 +58,8 @@ pub fn Callable(comptime Callsite_fn: type) type {
 
         pub fn initNoContext(
             function: *const Callsite_fn,
-            deinit_fn: ?*const fn (*anyopaque) void,
         ) Self {
-            return Self.init(@ptrCast(function), null, deinit_fn);
+            return Self.init(@ptrCast(function), null);
         }
 
         pub fn call(

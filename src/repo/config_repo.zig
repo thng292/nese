@@ -61,10 +61,7 @@ pub fn init(allocator: std.mem.Allocator) !Self {
 
 pub fn deinit(self: *Self) void {
     const cwd = std.fs.cwd();
-    if (cwd.openFile(
-        save_file_path,
-        .{ .mode = .write_only },
-    )) |file| {
+    if (cwd.createFile(save_file_path, .{})) |file| {
         self.save(file) catch |e| {
             std.debug.print("{s}\n", .{@errorName(e)});
         };
@@ -78,5 +75,5 @@ pub fn save(self: Self, file: std.fs.File) !void {
 
 pub fn changeLanguageFilePathCopy(self: *Self, path: []const u8) !void {
     self.allocator.free(self.config.general.language_file_path);
-    self.config.general.language_file_path = try self.ns.allocator.dupe(u8, path);
+    self.config.general.language_file_path = try self.allocator.dupe(u8, path);
 }

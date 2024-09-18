@@ -75,10 +75,7 @@ pub fn init(allocator: std.mem.Allocator) !Self {
 
 pub fn deinit(self: *Self) void {
     const cwd = std.fs.cwd();
-    if (cwd.openFile(
-        save_file_path,
-        .{ .mode = .write_only },
-    )) |file| {
+    if (cwd.createFile(save_file_path, .{})) |file| {
         self.save(file) catch {};
     } else |_| {}
 
@@ -215,6 +212,11 @@ fn addDirectory(self: *Self, path: []const u8) !void {
 pub fn addDirectoryCopy(self: *Self, path: []const u8) !void {
     const path_mem = try self.allocator.dupe(u8, path);
     try self.addDirectory(path_mem);
+}
+
+pub fn removeDirectory(self: *Self, index: usize) void {
+    const dir = self.game_dirs_list.orderedRemove(index);
+    self.allocator.free(dir);
 }
 
 pub fn rescanDirectories(self: *Self) !void {

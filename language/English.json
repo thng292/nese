@@ -1,0 +1,42 @@
+{
+    "main_menu_bar": {
+        "file": "File",
+        "emulation": "Emulation",
+        "help": "Help"
+    },
+    "file_menu_items": {
+        "add_game": "Add game",
+        "exit": "Exit"
+    },
+    "emulation_menu_items": {
+        "continue": "Continue",
+        "pause": "Pause",
+        "stop": "Stop",
+        "take_snapshot": "Take snapshot",
+        "full_screen": "Full screen",
+        "config": "Config"
+    },
+    "help_menu_items": {
+        "about": "About"
+    },
+    "main_menu": {
+        "games": "Games",
+        "time_played": "Time played",
+        "favorite": "Favorite"
+    },
+    "main_menu_context_menu": {
+        "open": "Open",
+        "remove": "Remove",
+        "mark_favorite": "Add to favorite",
+        "unmark_favorite": "Remove from favorite",
+        "rename": "Rename",
+        "change_path": "Change Path"
+    },
+    "add_game_popup": {
+        "game_path": "Game Path",
+        "add_game": "Add game",
+        "change_path": "Update path",
+        "error": "Error",
+        "cancel": "Cancel"
+    }
+}

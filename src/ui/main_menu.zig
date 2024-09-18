@@ -11,6 +11,8 @@ const GameRepo = @import("../repo/game_repo.zig");
 const ChangeGamePathPopup = @import("popups.zig").AddGamePopup;
 const Self = @This();
 
+const Utils = @import("utils.zig");
+
 const max_usize = std.math.maxInt(usize);
 
 arena: std.heap.ArenaAllocator,
@@ -18,12 +20,14 @@ buffer: [:0]u8,
 game_repo: *GameRepo,
 change_path_popup: ChangeGamePathPopup,
 open_game_callback: Callback,
+style: *const zgui.Style,
+
 selected: usize = max_usize,
 hovering: usize = max_usize,
 renaming: usize = max_usize,
 changing: usize = max_usize,
 
-table_flags: zgui.TableFlags = .{
+const table_flags: zgui.TableFlags = .{
     .sortable = false,
     .resizable = true,
     .sizing = .stretch_prop,
@@ -31,13 +35,14 @@ table_flags: zgui.TableFlags = .{
     .scroll_y = true,
     .pad_outer_x = true,
     .borders = .{ .inner_h = true, .inner_v = false },
-},
-row_pad: struct { x: f32 = 32, y: f32 = 16 } = .{},
+};
+const row_pad: struct { x: f32 = 32, y: f32 = 16 } = .{};
 
 pub fn init(
     allocator: std.mem.Allocator,
     game_repo: *GameRepo,
     buffer: [:0]u8,
+    style: *zgui.Style,
     open_game_callback: Callback,
 ) !Self {
     const arena = std.heap.ArenaAllocator.init(allocator);
@@ -46,9 +51,10 @@ pub fn init(
         .open_game_callback = open_game_callback,
         .arena = arena,
         .buffer = buffer,
+        .style = style,
         .change_path_popup = ChangeGamePathPopup{
             .callback = ChangeGamePathPopup.Callback
-                .init(Self.changeGamePath, null, null),
+                .init(Self.changeGamePath, null),
             .path_buffer = buffer,
         },
     };
@@ -66,7 +72,6 @@ pub fn draw(self: *Self, strings: Strings) void {
 
     const screen_w = view_port_size[0];
     const screen_h = view_port_size[1];
-    const style = zgui.getStyle();
 
     const mouse_pos = zgui.getMousePos();
 
@@ -96,6 +101,7 @@ pub fn draw(self: *Self, strings: Strings) void {
         .no_move = true,
         .no_collapse = true,
         .no_title_bar = true,
+        .no_bring_to_front_on_focus = true,
     } })) {
         defer zgui.end();
         zgui.popStyleVar(.{});
@@ -103,7 +109,7 @@ pub fn draw(self: *Self, strings: Strings) void {
 
         if (zgui.beginTable("MainMenu_Games", .{
             .column = 3,
-            .flags = self.table_flags,
+            .flags = table_flags,
         })) {
             defer zgui.endTable();
 
@@ -111,12 +117,12 @@ pub fn draw(self: *Self, strings: Strings) void {
 
             zgui.pushStyleVar2f(.{
                 .idx = zgui.StyleVar.cell_padding,
-                .v = [_]f32{ self.row_pad.x, self.row_pad.y },
+                .v = [_]f32{ row_pad.x, row_pad.y },
             });
             defer zgui.popStyleVar(.{});
 
             for (self.game_repo.getGames(), 0..) |game, i| {
-                self.drawGameRow(game, i, mouse_pos, style);
+                self.drawGameRow(game, i, mouse_pos, self.style);
             }
 
             self.drawContextMenu(strings);
@@ -130,7 +136,7 @@ inline fn drawGameRow(
     game: Game,
     i: usize,
     mouse_pos: [2]f32,
-    style: *zgui.Style,
+    style: *const zgui.Style,
 ) void {
     zgui.tableNextRow(.{});
     var row_height: f32 = 0;
@@ -149,16 +155,24 @@ inline fn drawGameRow(
             @memset(self.buffer, 0);
         }
     } else {
-        zgui.textWrapped("{s}", .{game.name});
+        Utils.centeredTextSamelineWidget(self.style, game.name);
     }
-    row_height = @max(row_height, zgui.getItemRectSize()[1] + self.row_pad.y * 2);
-    const row_top = zgui.getItemRectMin()[1] - self.row_pad.y;
+    row_height = @max(row_height, zgui.getItemRectSize()[1] + row_pad.y * 2);
+    const row_top = zgui.getItemRectMin()[1] - row_pad.y;
 
     _ = zgui.tableNextColumn();
-    zgui.textWrapped("{d}", .{@divTrunc(game.playtime, std.time.s_per_min)});
-    row_height = @max(row_height, zgui.getItemRectSize()[1] + self.row_pad.y * 2);
+    const play_time_str = std.fmt.allocPrint(
+        self.arena.allocator(),
+        "{d}",
+        .{@divTrunc(game.playtime, std.time.s_per_min)},
+    );
+    if (play_time_str) |str| {
+        Utils.centeredTextSamelineWidget(self.style, str);
+    } else |_| {
+        zgui.text("{d}", .{@divTrunc(game.playtime, std.time.s_per_min)});
+    }
+    row_height = @max(row_height, zgui.getItemRectSize()[1] + row_pad.y * 2);
 
-    _ = zgui.tableNextColumn();
     const checkbox_label = blk: {
         const allocator = self.arena.allocator();
         if (comptime builtin.mode == .Debug) {
@@ -170,10 +184,11 @@ inline fn drawGameRow(
         std.process.exit(@intFromError(e));
     };
 
+    _ = zgui.tableNextColumn();
     if (zgui.radioButton(checkbox_label, .{ .active = game.is_favorite })) {
         self.game_repo.toggleFavorite(i);
     }
-    row_height = @max(row_height, zgui.getItemRectSize()[1] + self.row_pad.y * 2);
+    row_height = @max(row_height, zgui.getItemRectSize()[1] + row_pad.y * 2);
 
     const relative_pos = mouse_pos[1] - row_top;
     const hovered = relative_pos > 0 and relative_pos <= row_height //

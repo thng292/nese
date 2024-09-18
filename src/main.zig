@@ -14,6 +14,7 @@ const GameRepo = @import("repo/game_repo.zig");
 const LanguageRepo = @import("repo/language_repo.zig");
 
 const MainMenu = @import("ui/main_menu.zig");
+const ConfigMenu = @import("ui/config_menu.zig");
 const MenuBar = @import("ui/menu_bar.zig");
 
 const Nes = @import("nes/nes.zig");
@@ -34,6 +35,7 @@ pub fn main() !void {
 
     const shared_string_buffer = try gpa.allocSentinel(u8, 1024, 0);
     defer gpa.free(shared_string_buffer);
+    @memset(shared_string_buffer, 0);
 
     var config_repo = try ConfigRepo.init(gpa);
     var language_repo = try LanguageRepo.init(gpa);
@@ -61,12 +63,7 @@ pub fn main() !void {
     zglfw.windowHintTyped(.client_api, .no_api);
     std.log.info("Initialized GLFW", .{});
 
-    const window = try zglfw.Window.create(
-        @intFromFloat(Nes.SCREEN_SIZE.width * config.game.game_scale),
-        @intFromFloat(Nes.SCREEN_SIZE.height * config.game.game_scale),
-        "Nese",
-        null,
-    );
+    const window = try zglfw.Window.create(800, 600, "Nese", null);
     defer window.destroy();
     std.log.info("Created Window", .{});
 
@@ -112,8 +109,9 @@ pub fn main() !void {
     );
     defer zgui.backend.deinit();
     std.log.info("Initialized ImGUI's backend", .{});
+    var default_style = zgui.getStyle();
 
-    zgui.getStyle().scaleAllSizes(scale_factor * config.general.ui_scale);
+    default_style.scaleAllSizes(scale_factor * config.general.ui_scale);
 
     // var arg_it = try std.process.argsWithAllocator(gpa);
     // _ = arg_it.next(); // skip first arg
@@ -130,6 +128,7 @@ pub fn main() !void {
     var current_screen = Screen.MainMenuScreen;
     var game_path = std.ArrayList(u8).init(gpa);
     defer game_path.deinit();
+    var menus_toggle = MenusToggle{};
 
     const OpenGameContext = struct {
         const Self = @This();
@@ -147,19 +146,28 @@ pub fn main() !void {
         .current_screen = &current_screen,
         .game_path = &game_path,
     };
-
     var main_menu_state = try MainMenu.init(
         gpa,
         &game_repo,
         shared_string_buffer,
+        default_style,
         MainMenu.Callback.init(
             OpenGameContext.openGame,
             &openGameContext,
-            null,
         ),
     );
-
     defer main_menu_state.deinit();
+
+    var config_menu = try ConfigMenu.init(
+        gpa,
+        default_style,
+        &config_repo,
+        &language_repo,
+        &game_repo,
+        shared_string_buffer,
+        ConfigMenu.ApplyCallback.initNoContext(&tmp),
+    );
+    defer config_menu.deinit();
 
     // const frame_deadline = @as(f64, 1) / 60;
     // var frame_accumulated: f64 = 0;
@@ -189,43 +197,54 @@ pub fn main() !void {
             gctx.swapchain_descriptor.width,
             gctx.swapchain_descriptor.height,
         );
+        { // In between begin and end frame
+            zgui.pushStyleVar1f(.{ .idx = .scrollbar_size, .v = 10 });
+            defer zgui.popStyleVar(.{});
 
-        switch (MenuBar.drawMenuBar(strings.*, .{
-            .in_game = false,
-            .is_pause = false,
-        })) {
-            .Exit => exit = true,
-            .None => {},
-            else => {},
+            switch (MenuBar.drawMenuBar(strings.*, .{
+                .in_game = false,
+                .is_pause = false,
+            })) {
+                .Exit => exit = true,
+                .OpenConfig => menus_toggle.config_menu = true,
+                .None => {},
+                else => {},
+            }
+
+            if (menus_toggle.config_menu) {
+                config_menu.draw(&menus_toggle.config_menu, strings.*);
+            }
+
+            if (config.general.show_metric) {
+                zgui.showMetricsWindow(&config.general.show_metric);
+            }
+            // zgui.showDemoWindow(null);
+
+            switch (current_screen) {
+                .MainMenuScreen => {
+                    main_menu_state.draw(strings.*);
+                },
+                .GameScreen => {
+                    std.process.cleanExit();
+                },
+            }
+
+            zgui.setNextWindowSize(.{
+                .w = Nes.SCREEN_SIZE.width,
+                .h = Nes.SCREEN_SIZE.height,
+                .cond = .first_use_ever,
+            });
+
+            // const texture_id = try nes.runFrame();
+            // if (zgui.begin("Main Game", .{})) {
+            //     zgui.image(texture_id, .{
+            //         .w = Nes.SCREEN_SIZE.width * config.scale,
+            //         .h = Nes.SCREEN_SIZE.height * config.scale,
+            //     });
+            // }
+            // zgui.end();
+
         }
-
-        if (config.general.show_metric) {
-            zgui.showMetricsWindow(null);
-        }
-
-        switch (current_screen) {
-            .MainMenuScreen => {
-                main_menu_state.draw(strings.*);
-            },
-            .GameScreen => {
-                std.process.cleanExit();
-            },
-        }
-
-        zgui.setNextWindowSize(.{
-            .w = Nes.SCREEN_SIZE.width,
-            .h = Nes.SCREEN_SIZE.height,
-            .cond = .first_use_ever,
-        });
-
-        // const texture_id = try nes.runFrame();
-        // if (zgui.begin("Main Game", .{})) {
-        //     zgui.image(texture_id, .{
-        //         .w = Nes.SCREEN_SIZE.width * config.scale,
-        //         .h = Nes.SCREEN_SIZE.height * config.scale,
-        //     });
-        // }
-        // zgui.end();
 
         const swapchain_texv = gctx.swapchain.getCurrentTextureView();
         defer swapchain_texv.release();
@@ -248,4 +267,12 @@ pub fn main() !void {
         gctx.submit(&.{commands});
         _ = gctx.present();
     }
+}
+
+const MenusToggle = struct {
+    config_menu: bool = true,
+};
+
+fn tmp() void {
+    std.debug.print("tmp called\n", .{});
 }

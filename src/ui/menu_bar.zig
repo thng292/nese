@@ -71,5 +71,18 @@ pub fn drawMenuBar(strings: Strings, args: packed struct(u8) {
             }
         }
     }
+
+    if (zgui.isKeyDown(.f11)) {
+        return .FullScreen;
+    }
+    if (zgui.isKeyDown(.f5)) {
+        return .PauseContinue;
+    }
+    if (zgui.isKeyDown(.f6)) {
+        return .Stop;
+    }
+    if (zgui.isKeyDown(.f7)) {
+        return .OpenConfig;
+    }
     return .None;
 }

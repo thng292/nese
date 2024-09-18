@@ -55,6 +55,17 @@ config_menu: struct {
     tab_general: Str = "General",
     tab_game: Str = "Game",
     tab_control: Str = "Control",
+
+    apply: Str = "Apply",
+    cancel: Str = "Cancel",
+
+    all_folder: Str = "All games folders",
+    add: Str = "Add folder",
+    remove: Str = "Remove",
+    language: Str = "Language",
+    ui_scale: Str = "Ui Scale",
+    show_debug: Str = "Show debug window",
+
     dpad_up: Str = "D-Pad Up",
     dpad_down: Str = "D-Pad Down",
     dpad_left: Str = "D-Pad Left",
