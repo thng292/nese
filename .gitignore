@@ -10,7 +10,7 @@ out*.txt
 log.txt
 nese
 saves/
-./data/
+data/
 .idea
 config.json
 imgui.ini
