@@ -53,27 +53,35 @@ add_game_popup: struct {
 
 config_menu: struct {
     tab_general: Str = "General",
-    tab_game: Str = "Game",
+    game_config: Str = "Game",
     tab_control: Str = "Control",
-
     apply: Str = "Apply",
-    cancel: Str = "Cancel",
-
+    restore_last: Str = "Restore last",
     all_folder: Str = "All games folders",
     add: Str = "Add folder",
     remove: Str = "Remove",
     language: Str = "Language",
     ui_scale: Str = "Ui Scale",
     show_debug: Str = "Show debug window",
-
-    dpad_up: Str = "D-Pad Up",
-    dpad_down: Str = "D-Pad Down",
-    dpad_left: Str = "D-Pad Left",
-    dpad_right: Str = "D-Pad Right",
-    button_start: Str = "Start",
-    button_sellect: Str = "Select",
-    button_A: Str = "A",
-    button_B: Str = "B",
+    emulation_speed: Str = "Emulation speed",
+    game_scale: Str = "Game Scale",
+    input_poll_rate: Str = "Input poll rate",
+    input_poll_rate_unlimit: Str = "0 means Unlimited",
+    controller: Str = "Controller",
+    press_key: Str = "Press key to map",
+    cancel: Str = "Cancel",
+    controller_button: struct {
+        Up: Str = "D-Pad Up",
+        Down: Str = "D-Pad Down",
+        Left: Str = "D-Pad Left",
+        Right: Str = "D-Pad Right",
+        Start: Str = "Start",
+        Select: Str = "Select",
+        A: Str = "A",
+        B: Str = "B",
+    } = .{},
+    map_key: Str = "Map key",
+    map_new_key: Str = "Map a new key for",
 } = .{},
 
 pub fn save(self: Self, file: std.fs.File) !void {

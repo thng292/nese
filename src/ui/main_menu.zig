@@ -35,6 +35,7 @@ const table_flags: zgui.TableFlags = .{
     .scroll_y = true,
     .pad_outer_x = true,
     .borders = .{ .inner_h = true, .inner_v = false },
+    .row_bg = true,
 };
 const row_pad: struct { x: f32 = 32, y: f32 = 16 } = .{};
 
@@ -64,7 +65,7 @@ pub fn deinit(self: *Self) void {
     self.arena.deinit();
 }
 
-pub fn draw(self: *Self, strings: Strings) void {
+pub fn draw(self: *Self, strings: Strings) !void {
     _ = self.arena.reset(.retain_capacity);
     const view_port = zgui.getMainViewport();
     const view_port_size = view_port.getWorkSize();
@@ -122,7 +123,7 @@ pub fn draw(self: *Self, strings: Strings) void {
             defer zgui.popStyleVar(.{});
 
             for (self.game_repo.getGames(), 0..) |game, i| {
-                self.drawGameRow(game, i, mouse_pos, self.style);
+                try self.drawGameRow(game, i, mouse_pos, self.style);
             }
 
             self.drawContextMenu(strings);
@@ -137,7 +138,7 @@ inline fn drawGameRow(
     i: usize,
     mouse_pos: [2]f32,
     style: *const zgui.Style,
-) void {
+) !void {
     zgui.tableNextRow(.{});
     var row_height: f32 = 0;
 
@@ -173,17 +174,14 @@ inline fn drawGameRow(
     }
     row_height = @max(row_height, zgui.getItemRectSize()[1] + row_pad.y * 2);
 
-    const checkbox_label = blk: {
+    const checkbox_label = try blk: {
         const allocator = self.arena.allocator();
         if (comptime builtin.mode == .Debug) {
             break :blk std.fmt.allocPrintZ(allocator, "##MainMenu_FavoriteCheckBox_{}", .{i});
         } else {
             break :blk std.fmt.allocPrintZ(allocator, "##CB{}", .{i});
         }
-    } catch |e| {
-        std.process.exit(@intFromError(e));
     };
-
     _ = zgui.tableNextColumn();
     if (zgui.radioButton(checkbox_label, .{ .active = game.is_favorite })) {
         self.game_repo.toggleFavorite(i);

@@ -1,0 +1,175 @@
+{
+    "games": [
+        {
+            "path": "D:\\Code\\zig\\nese\\test-rom\\10_yard_fight.nes",
+            "name": "10_yard_fight",
+            "playtime": 0,
+            "last_played": 0,
+            "play_count": 0,
+            "is_favorite": false
+        },
+        {
+            "path": "D:\\Code\\zig\\nese\\test-rom\\Adventure_island2.nes",
+            "name": "Adventure_island2",
+            "playtime": 0,
+            "last_played": 0,
+            "play_count": 0,
+            "is_favorite": false
+        },
+        {
+            "path": "D:\\Code\\zig\\nese\\test-rom\\Baseball.nes",
+            "name": "Baseball",
+            "playtime": 0,
+            "last_played": 0,
+            "play_count": 0,
+            "is_favorite": false
+        },
+        {
+            "path": "D:\\Code\\zig\\nese\\test-rom\\Castlevania.nes",
+            "name": "Castlevania",
+            "playtime": 0,
+            "last_played": 0,
+            "play_count": 0,
+            "is_favorite": false
+        },
+        {
+            "path": "D:\\Code\\zig\\nese\\test-rom\\Donkey_kong_classics.nes",
+            "name": "Donkey_kong_classics",
+            "playtime": 0,
+            "last_played": 0,
+            "play_count": 0,
+            "is_favorite": false
+        },
+        {
+            "path": "D:\\Code\\zig\\nese\\test-rom\\Ghost_busters2.nes",
+            "name": "Ghost_busters2",
+            "playtime": 0,
+            "last_played": 0,
+            "play_count": 0,
+            "is_favorite": false
+        },
+        {
+            "path": "D:\\Code\\zig\\nese\\test-rom\\Kung_fu.nes",
+            "name": "Kung_fu",
+            "playtime": 0,
+            "last_played": 0,
+            "play_count": 0,
+            "is_favorite": false
+        },
+        {
+            "path": "D:\\Code\\zig\\nese\\test-rom\\MMC3.nes",
+            "name": "MMC3",
+            "playtime": 0,
+            "last_played": 0,
+            "play_count": 0,
+            "is_favorite": false
+        },
+        {
+            "path": "D:\\Code\\zig\\nese\\test-rom\\Super Mario Bros3.nes",
+            "name": "Super Mario Bros3",
+            "playtime": 0,
+            "last_played": 0,
+            "play_count": 0,
+            "is_favorite": false
+        },
+        {
+            "path": "D:\\Code\\zig\\nese\\test-rom\\Super_mario_brothers.nes",
+            "name": "Super_mario_brothers",
+            "playtime": 0,
+            "last_played": 0,
+            "play_count": 0,
+            "is_favorite": false
+        },
+        {
+            "path": "D:\\Code\\zig\\nese\\test-rom\\Tetris.nes",
+            "name": "Tetris",
+            "playtime": 0,
+            "last_played": 0,
+            "play_count": 0,
+            "is_favorite": false
+        },
+        {
+            "path": "D:\\Code\\zig\\nese\\test-rom\\bubble bobble.nes",
+            "name": "bubble bobble",
+            "playtime": 0,
+            "last_played": 0,
+            "play_count": 0,
+            "is_favorite": false
+        },
+        {
+            "path": "D:\\Code\\zig\\nese\\test-rom\\contra.nes",
+            "name": "contra",
+            "playtime": 0,
+            "last_played": 0,
+            "play_count": 0,
+            "is_favorite": false
+        },
+        {
+            "path": "D:\\Code\\zig\\nese\\test-rom\\donkey kong.nes",
+            "name": "donkey kong",
+            "playtime": 0,
+            "last_played": 0,
+            "play_count": 0,
+            "is_favorite": false
+        },
+        {
+            "path": "D:\\Code\\zig\\nese\\test-rom\\mmc1_a12.nes",
+            "name": "mmc1_a12",
+            "playtime": 0,
+            "last_played": 0,
+            "play_count": 0,
+            "is_favorite": false
+        },
+        {
+            "path": "D:\\Code\\zig\\nese\\test-rom\\nestest.nes",
+            "name": "nestest",
+            "playtime": 0,
+            "last_played": 0,
+            "play_count": 0,
+            "is_favorite": false
+        },
+        {
+            "path": "D:\\Code\\zig\\nese\\test-rom\\official.nes",
+            "name": "official",
+            "playtime": 0,
+            "last_played": 0,
+            "play_count": 0,
+            "is_favorite": false
+        },
+        {
+            "path": "D:\\Code\\zig\\nese\\test-rom\\official_only.nes",
+            "name": "official_only",
+            "playtime": 0,
+            "last_played": 0,
+            "play_count": 0,
+            "is_favorite": false
+        },
+        {
+            "path": "D:\\Code\\zig\\nese\\test-rom\\scanline.nes",
+            "name": "scanline",
+            "playtime": 0,
+            "last_played": 0,
+            "play_count": 0,
+            "is_favorite": false
+        },
+        {
+            "path": "D:\\Code\\zig\\nese\\test-rom\\scroll.nes",
+            "name": "scroll",
+            "playtime": 0,
+            "last_played": 0,
+            "play_count": 0,
+            "is_favorite": false
+        },
+        {
+            "path": "D:\\Code\\zig\\nese\\test-rom\\zelda.nes",
+            "name": "zelda",
+            "playtime": 0,
+            "last_played": 0,
+            "play_count": 0,
+            "is_favorite": false
+        }
+    ],
+    "game_dirs": [
+        "D:\\Code\\zig\\nese\\test-rom"
+    ]
+}
