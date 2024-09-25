@@ -6,7 +6,10 @@ const zglfw = @import("zglfw");
 const Strings = @import("../data/i18n.zig");
 const Callable = @import("../data/callable.zig").Callable;
 const Game = @import("../data/game.zig");
+const Config = @import("../data/config.zig");
 
+const drawControlConfig = @import("control_config.zig").drawControlConfig;
+const ControllerMap = @import("../nes/control.zig").ControllerMap;
 const GameRepo = @import("../repo/game_repo.zig");
 const ChangeGamePathPopup = @import("popups.zig").AddGamePopup;
 const Self = @This();
@@ -27,6 +30,11 @@ hovering: usize = max_usize,
 renaming: usize = max_usize,
 changing: usize = max_usize,
 
+window: *zglfw.Window,
+changing_key: ?*zglfw.Key = null,
+open_control_config: bool = false,
+config: *const Config,
+
 const table_flags: zgui.TableFlags = .{
     .sortable = false,
     .resizable = true,
@@ -41,18 +49,22 @@ const row_pad: struct { x: f32 = 32, y: f32 = 16 } = .{};
 
 pub fn init(
     allocator: std.mem.Allocator,
+    window: *zglfw.Window,
     game_repo: *GameRepo,
     buffer: [:0]u8,
     style: *zgui.Style,
+    config: *const Config,
     open_game_callback: Callback,
 ) !Self {
     const arena = std.heap.ArenaAllocator.init(allocator);
     return Self{
         .game_repo = game_repo,
+        .window = window,
         .open_game_callback = open_game_callback,
         .arena = arena,
         .buffer = buffer,
         .style = style,
+        .config = config,
         .change_path_popup = ChangeGamePathPopup{
             .callback = ChangeGamePathPopup.Callback
                 .init(Self.changeGamePath, null),
@@ -128,6 +140,29 @@ pub fn draw(self: *Self, strings: Strings) !void {
 
             self.drawContextMenu(strings);
             self.change_path_popup.draw(strings);
+        }
+    }
+    if (self.open_control_config) {
+        const current_selected_game = &self.game_repo.games_list.items[self.changing];
+        if (current_selected_game.controller_map == null) {
+            current_selected_game.controller_map = [_]ControllerMap{
+                self.config.game.controller1_map,
+                self.config.game.controller2_map,
+            };
+        }
+        const tmp = [2]*ControllerMap{
+            &current_selected_game.controller_map.?[0],
+            &current_selected_game.controller_map.?[1],
+        };
+        if (zgui.begin(strings.config_menu.tab_control, .{ .popen = &self.open_control_config })) {
+            defer zgui.end();
+            try drawControlConfig(
+                self.arena.allocator(),
+                tmp,
+                self.window,
+                &self.changing_key,
+                strings,
+            );
         }
     }
 }
@@ -240,7 +275,7 @@ inline fn drawGameRow(
 }
 
 inline fn drawContextMenu(self: *Self, strings: Strings) void {
-    var should_popup = false;
+    var should_popup_change_path = false;
     if (zgui.beginPopup(context_menu_id, .{})) {
         defer zgui.endPopup();
         if (zgui.menuItem(strings.main_menu_context_menu.open, .{})) {
@@ -270,10 +305,14 @@ inline fn drawContextMenu(self: *Self, strings: Strings) void {
             std.mem.copyForwards(u8, self.buffer, self.game_repo
                 .getGames()[self.changing].path);
             self.change_path_popup.callback.context = self;
-            should_popup = true;
+            should_popup_change_path = true;
+        }
+        if (zgui.menuItem(strings.main_menu_context_menu.change_control, .{})) {
+            self.changing = self.hovering;
+            self.open_control_config = true;
         }
     }
-    if (should_popup) {
+    if (should_popup_change_path) {
         zgui.openPopup(strings.add_game_popup.change_path, .{});
     }
 }

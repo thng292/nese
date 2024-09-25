@@ -1,5 +1,5 @@
 const std = @import("std");
-// const GameConfig = @import("config.zig").GameConfig;
+const ControllerMap = @import("../nes/control.zig").ControllerMap;
 
 const Self = @This();
 path: []const u8,
@@ -8,7 +8,7 @@ playtime: u32 = 0,
 last_played: i64 = 0,
 play_count: u32 = 0,
 is_favorite: bool = false,
-// config: ?GameConfig = null,
+controller_map: ?[2]ControllerMap = null,
 
 pub fn clone(self: Self, allocator: std.mem.Allocator) !Self {
     var res = self;

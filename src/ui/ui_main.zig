@@ -105,9 +105,11 @@ pub fn ui_main(
     };
     var main_menu_state = try MainMenu.init(
         allocator,
+        window,
         game_repo,
         shared_string_buffer,
         default_style,
+        config,
         MainMenu.Callback.init(
             OpenGameContext.openGame,
             &openGameContext,

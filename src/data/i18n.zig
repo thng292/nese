@@ -41,6 +41,7 @@ main_menu_context_menu: struct {
     unmark_favorite: Str = "Remove from favorite",
     rename: Str = "Rename",
     change_path: Str = "Change Path",
+    change_control: Str = "Change control",
 } = .{},
 
 add_game_popup: struct {

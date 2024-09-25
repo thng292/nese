@@ -97,11 +97,11 @@ pub fn save(self: Self, file: std.fs.File) !void {
     try std.json.stringify(save_data, .{ .whitespace = .indent_4 }, file.writer());
 }
 
-pub fn getGames(self: Self) []const Game {
+pub inline fn getGames(self: Self) []const Game {
     return self.games_list.items;
 }
 
-pub fn getDirs(self: Self) []const []const u8 {
+pub inline fn getDirs(self: Self) []const []const u8 {
     return self.game_dirs_list.items;
 }
 
