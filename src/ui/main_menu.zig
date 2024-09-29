@@ -139,29 +139,29 @@ pub fn draw(self: *Self, strings: Strings) !void {
 
             self.drawContextMenu(strings);
             self.change_path_popup.draw(strings);
-        }
-    }
-    if (self.open_control_config) {
-        const current_selected_game = &self.game_repo.games_list.items[self.changing];
-        if (current_selected_game.controller_map == null) {
-            current_selected_game.controller_map = [_]ControllerMap{
-                self.config.game.controller1_map,
-                self.config.game.controller2_map,
-            };
-        }
-        const tmp = [2]*ControllerMap{
-            &current_selected_game.controller_map.?[0],
-            &current_selected_game.controller_map.?[1],
-        };
-        if (zgui.beginPopupModal(strings.config_menu.tab_control, .{ .popen = &self.open_control_config })) {
-            defer zgui.end();
-            try drawControlConfig(
-                self.arena.allocator(),
-                tmp,
-                self.window,
-                &self.changing_key,
-                strings,
-            );
+            if (self.open_control_config) {
+                const current_selected_game = &self.game_repo.games_list.items[self.changing].controller_map;
+                if (current_selected_game.* == null) {
+                    current_selected_game.* = [_]ControllerMap{
+                        self.config.game.controller1_map,
+                        self.config.game.controller2_map,
+                    };
+                }
+                const tmp = [2]*ControllerMap{
+                    &current_selected_game.*.?[0],
+                    &current_selected_game.*.?[1],
+                };
+                if (zgui.beginPopupModal(strings.config_menu.tab_control, .{ .popen = &self.open_control_config })) {
+                    defer zgui.end();
+                    try drawControlConfig(
+                        self.arena.allocator(),
+                        tmp,
+                        self.window,
+                        &self.changing_key,
+                        strings,
+                    );
+                }
+            }
         }
     }
 }
@@ -275,6 +275,7 @@ inline fn drawGameRow(
 
 inline fn drawContextMenu(self: *Self, strings: Strings) void {
     var should_popup_change_path = false;
+    var should_popup_change_ctrl = false;
     if (zgui.beginPopup(context_menu_id, .{})) {
         defer zgui.endPopup();
         if (zgui.menuItem(strings.main_menu_context_menu.open, .{})) {
@@ -309,10 +310,14 @@ inline fn drawContextMenu(self: *Self, strings: Strings) void {
         if (zgui.menuItem(strings.main_menu_context_menu.change_control, .{})) {
             self.changing = self.hovering;
             self.open_control_config = true;
+            should_popup_change_ctrl = true;
         }
     }
     if (should_popup_change_path) {
         zgui.openPopup(strings.add_game_popup.change_path, .{});
+    }
+    if (should_popup_change_ctrl) {
+        zgui.openPopup(strings.config_menu.tab_control, .{});
     }
 }
 

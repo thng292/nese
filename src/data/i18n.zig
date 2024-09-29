@@ -28,6 +28,13 @@ help_menu_items: struct {
     about: Str = "About",
 } = .{},
 
+about: struct {
+    title: Str = "About",
+    version: Str = "Version",
+    made_by: Str = "This program was made by",
+    source_code: Str = "Source code",
+} = .{},
+
 main_menu: struct {
     games: Str = "Games",
     time_played: Str = "Time played",

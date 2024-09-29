@@ -11,9 +11,11 @@ const GameRepo = @import("../repo/game_repo.zig");
 const MainMenu = @import("main_menu.zig");
 const ConfigMenu = @import("config_menu.zig");
 const MenuBar = @import("menu_bar.zig");
+const About = @import("about.zig");
 
 const MenusToggle = struct {
     config_menu: bool = false,
+    about: bool = false,
 };
 
 const ScreenTag = enum {
@@ -157,6 +159,7 @@ pub fn ui_main(
             })) {
                 .Exit => signal = .Exit,
                 .OpenConfig => menus_toggle.config_menu = true,
+                .About => menus_toggle.about = true,
                 .None => {},
                 else => {},
             }
@@ -185,8 +188,10 @@ pub fn ui_main(
                 if (config_menu_state) |config_menu| {
                     config_menu.deinit();
                     allocator.destroy(config_menu);
+                    config_menu_state = null;
                 }
             }
+            About.drawAbout(&menus_toggle.about, strings.*);
 
             if (config.general.show_metric) {
                 zgui.showMetricsWindow(&config.general.show_metric);
