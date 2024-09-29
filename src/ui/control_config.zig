@@ -35,11 +35,10 @@ pub fn drawControlConfig(
             )});
             zgui.sameLine(.{});
             zgui.setCursorPosX(widget_x);
-            if (zgui.button(try std.fmt.allocPrintZ(
-                allocator,
-                "{s}",
-                .{@tagName(@field(controller_map, field_name))},
-            ), .{ .w = widget_width_percent * total_w })) {
+            if (zgui.button(
+                @tagName(@field(controller_map, field_name)),
+                .{ .w = widget_width_percent * total_w },
+            )) {
                 changing_key.* = &@field(controller_map, field_name);
                 zgui.openPopup(strings.config_menu.map_key, .{});
             }

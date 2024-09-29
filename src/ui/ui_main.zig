@@ -16,12 +16,18 @@ const MenusToggle = struct {
     config_menu: bool = false,
 };
 
-const Screen = enum {
-    MainMenuScreen,
+const ScreenTag = enum {
+    MenuScreen,
     GameScreen,
 };
 
+const Screen = union(ScreenTag) {
+    MenuScreen: ?*MainMenu,
+    GameScreen: ?*void,
+};
+
 const Signal = enum {
+    None,
     Exit,
     Restart,
 };
@@ -66,8 +72,7 @@ pub fn ui_main(
     var default_style = zgui.getStyle();
     default_style.scaleAllSizes(scale_factor);
 
-    const font = zgui.io.addFontFromFile("NotoSans.ttf", 16 * scale_factor);
-    _ = font;
+    _ = zgui.io.addFontFromFile("NotoSans.ttf", 16 * scale_factor);
 
     // var arg_it = try std.process.argsWithAllocator(allocator);
     // _ = arg_it.next(); // skip first arg
@@ -81,65 +86,31 @@ pub fn ui_main(
     // defer nes.deinit();
     // try nes.startup(APU{});
 
-    var current_screen = Screen.MainMenuScreen;
+    var current_screen = Screen{ .MenuScreen = null };
+    defer {
+        switch (current_screen) {
+            .MenuScreen => |main_menu_state| {
+                if (main_menu_state) |mmt| {
+                    mmt.deinit();
+                    allocator.destroy(mmt);
+                }
+            },
+            .GameScreen => {},
+        }
+    }
     var game_path = std.ArrayList(u8).init(allocator);
     defer game_path.deinit();
     var menus_toggle = MenusToggle{};
-    var signal: ?Signal = null;
+    var signal: Signal = .None;
 
-    const OpenGameContext = struct {
-        const Self = @This();
-        current_screen: *Screen,
-        game_path: *std.ArrayList(u8),
-
-        pub fn openGame(self: *Self, path: []const u8) void {
-            self.current_screen.* = Screen.GameScreen;
-            self.game_path.clearRetainingCapacity();
-            self.game_path.appendSlice(path) catch std.process.exit(1);
-            std.log.info("Opening: {s}", .{path});
-        }
-    };
     var openGameContext = OpenGameContext{
         .current_screen = &current_screen,
         .game_path = &game_path,
-    };
-    var main_menu_state = try MainMenu.init(
-        allocator,
-        window,
-        game_repo,
-        shared_string_buffer,
-        default_style,
-        config,
-        MainMenu.Callback.init(
-            OpenGameContext.openGame,
-            &openGameContext,
-        ),
-    );
-    defer main_menu_state.deinit();
-
-    const ApplyConfigContext = struct {
-        const Self = @This();
-        signal: *?Signal,
-
-        pub fn call(self: *Self) void {
-            self.signal.* = .Restart;
-        }
+        .allocator = &allocator,
     };
     var apply_config_context = ApplyConfigContext{ .signal = &signal };
-    var config_menu = try ConfigMenu.init(
-        allocator,
-        window,
-        default_style,
-        config_repo,
-        language_repo,
-        game_repo,
-        shared_string_buffer,
-        ConfigMenu.ApplyCallback.init(
-            &ApplyConfigContext.call,
-            &apply_config_context,
-        ),
-    );
-    defer config_menu.deinit();
+
+    var config_menu_state: ?*ConfigMenu = null;
 
     // const frame_deadline = @as(f64, 1) / 60;
     // var frame_accumulated: f64 = 0;
@@ -147,9 +118,10 @@ pub fn ui_main(
     // var start = zglfw.getTime();
 
     std.log.info("Starting main loop", .{});
-    while (!window.shouldClose()) {
-        if (signal) |sig| {
-            return sig;
+    while (signal == .None) {
+        if (window.shouldClose()) {
+            signal = .Exit;
+            continue;
         }
         zglfw.pollEvents();
         // nes.handleKey(window);
@@ -190,7 +162,30 @@ pub fn ui_main(
             }
 
             if (menus_toggle.config_menu) {
-                try config_menu.draw(&menus_toggle.config_menu, strings.*);
+                if (config_menu_state) |config_menu| {
+                    try config_menu.draw(&menus_toggle.config_menu, strings.*);
+                } else {
+                    const tmp = try allocator.create(ConfigMenu);
+                    tmp.* = try ConfigMenu.init(
+                        allocator,
+                        window,
+                        default_style,
+                        config_repo,
+                        language_repo,
+                        game_repo,
+                        shared_string_buffer,
+                        ConfigMenu.ApplyCallback.init(
+                            &ApplyConfigContext.call,
+                            &apply_config_context,
+                        ),
+                    );
+                    config_menu_state = tmp;
+                }
+            } else {
+                if (config_menu_state) |config_menu| {
+                    config_menu.deinit();
+                    allocator.destroy(config_menu);
+                }
             }
 
             if (config.general.show_metric) {
@@ -198,11 +193,28 @@ pub fn ui_main(
             }
 
             switch (current_screen) {
-                .MainMenuScreen => {
-                    try main_menu_state.draw(strings.*);
+                .MenuScreen => |main_menu_state_| {
+                    if (main_menu_state_) |main_menu_state| {
+                        try main_menu_state.draw(strings.*);
+                    } else {
+                        const main_menu_state = try allocator.create(MainMenu);
+                        main_menu_state.* = try MainMenu.init(
+                            allocator,
+                            window,
+                            game_repo,
+                            shared_string_buffer,
+                            default_style,
+                            config,
+                            MainMenu.Callback.init(
+                                OpenGameContext.openGame,
+                                &openGameContext,
+                            ),
+                        );
+                        current_screen = Screen{ .MenuScreen = main_menu_state };
+                    }
                 },
                 .GameScreen => {
-                    std.process.cleanExit();
+                    signal = .Restart;
                 },
             }
 
@@ -239,7 +251,32 @@ pub fn ui_main(
         _ = gctx.present();
     }
 
-    return .Exit;
+    return signal;
 }
 
-fn tmp() void {}
+const OpenGameContext = struct {
+    const Self = @This();
+    current_screen: *Screen,
+    game_path: *std.ArrayList(u8),
+    allocator: *const std.mem.Allocator,
+
+    pub fn openGame(self: *Self, path: []const u8) void {
+        self.current_screen.MenuScreen.?.deinit();
+        self.allocator.destroy(self.current_screen.MenuScreen.?);
+        self.current_screen.* = Screen{ .GameScreen = null };
+        self.game_path.clearRetainingCapacity();
+        self.game_path.appendSlice(path) catch {};
+        std.log.info("Opening: {s}", .{path});
+    }
+};
+
+const ApplyConfigContext = struct {
+    const Self = @This();
+    signal: *Signal,
+
+    pub fn call(self: *Self) void {
+        self.signal.* = .Restart;
+    }
+};
+
+// fn tmp() void {}

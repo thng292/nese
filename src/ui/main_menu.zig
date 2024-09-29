@@ -12,10 +12,9 @@ const drawControlConfig = @import("control_config.zig").drawControlConfig;
 const ControllerMap = @import("../nes/control.zig").ControllerMap;
 const GameRepo = @import("../repo/game_repo.zig");
 const ChangeGamePathPopup = @import("popups.zig").AddGamePopup;
-const Self = @This();
-
 const Utils = @import("utils.zig");
 
+const Self = @This();
 const max_usize = std.math.maxInt(usize);
 
 arena: std.heap.ArenaAllocator,
@@ -34,18 +33,6 @@ window: *zglfw.Window,
 changing_key: ?*zglfw.Key = null,
 open_control_config: bool = false,
 config: *const Config,
-
-const table_flags: zgui.TableFlags = .{
-    .sortable = false,
-    .resizable = true,
-    .sizing = .stretch_prop,
-    .no_borders_in_body_until_resize = true,
-    .scroll_y = true,
-    .pad_outer_x = true,
-    .borders = .{ .inner_h = true, .inner_v = false },
-    .row_bg = true,
-};
-const row_pad: struct { x: f32 = 32, y: f32 = 16 } = .{};
 
 pub fn init(
     allocator: std.mem.Allocator,
@@ -76,6 +63,18 @@ pub fn init(
 pub fn deinit(self: *Self) void {
     self.arena.deinit();
 }
+
+const table_flags: zgui.TableFlags = .{
+    .sortable = false,
+    .resizable = true,
+    .sizing = .stretch_prop,
+    .no_borders_in_body_until_resize = true,
+    .scroll_y = true,
+    .pad_outer_x = true,
+    .borders = .{ .inner_h = true, .inner_v = false },
+    .row_bg = true,
+};
+const row_pad: struct { x: f32 = 32, y: f32 = 16 } = .{};
 
 pub fn draw(self: *Self, strings: Strings) !void {
     _ = self.arena.reset(.retain_capacity);
@@ -154,7 +153,7 @@ pub fn draw(self: *Self, strings: Strings) !void {
             &current_selected_game.controller_map.?[0],
             &current_selected_game.controller_map.?[1],
         };
-        if (zgui.begin(strings.config_menu.tab_control, .{ .popen = &self.open_control_config })) {
+        if (zgui.beginPopupModal(strings.config_menu.tab_control, .{ .popen = &self.open_control_config })) {
             defer zgui.end();
             try drawControlConfig(
                 self.arena.allocator(),

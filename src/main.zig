@@ -70,7 +70,7 @@ pub fn main() !void {
         );
         switch (signal) {
             .Exit => break,
-            .Restart => continue,
+            else => {},
         }
     }
 }
