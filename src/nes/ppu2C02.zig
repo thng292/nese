@@ -1,5 +1,5 @@
 const std = @import("std");
-const Mapper = @import("mapper.zig");
+const Mapper = @import("mappers/mapper_interface.zig");
 const Rom = @import("ines.zig").ROM;
 const zgpu = @import("zgpu");
 const wgpu = zgpu.wgpu;

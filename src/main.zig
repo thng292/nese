@@ -38,6 +38,7 @@ pub fn main() !void {
 
     const window = try zglfw.Window.create(800, 600, "Nese", null);
     defer window.destroy();
+    window.setInputMode(.sticky_keys, true);
     std.log.info("Created Window", .{});
 
     const gctx = try zgpu.GraphicsContext.create(

@@ -1,15 +1,6 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
-pub const MapperTag = enum(u8) {
-    Mapper0,
-    Mapper1,
-    Mapper2,
-    Mapper3,
-    Mapper4,
-    _,
-};
-
 const Mapper = @This();
 context: *anyopaque,
 cpu_read_fn: *const fn (context: *anyopaque, addr: u16) u8,

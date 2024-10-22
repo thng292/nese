@@ -1,5 +1,6 @@
 const std = @import("std");
 const meta = @import("../data/meta.zig");
+const builtin = @import("builtin");
 
 const Game = @import("../data/game.zig");
 
@@ -37,10 +38,10 @@ pub fn init(allocator: std.mem.Allocator) !Self {
         tmp.close();
     };
 
-    if (should_load) {
+    if (should_load) blk: {
         const file_content = try cwd.readFileAlloc(allocator, save_file_path, bytes_limit);
         defer allocator.free(file_content);
-        const parsed = try std.json.parseFromSlice(
+        const parsed = std.json.parseFromSlice(
             SaveData,
             allocator,
             file_content,
@@ -49,7 +50,7 @@ pub fn init(allocator: std.mem.Allocator) !Self {
                 .duplicate_field_behavior = .use_last,
                 .ignore_unknown_fields = true,
             },
-        );
+        ) catch break :blk;
         defer parsed.deinit();
 
         try games_list.appendSlice(allocator, parsed.value.games);
@@ -177,7 +178,7 @@ pub fn sortGames(self: *Self) void {
 }
 
 fn scanDirectory(self: *Self, path: []const u8) !void {
-    const dir = try std.fs.openDirAbsolute(path, .{
+    const dir = try std.fs.cwd().openDir(path, .{
         .iterate = true,
     });
     var walker = try dir.walk(self.allocator);

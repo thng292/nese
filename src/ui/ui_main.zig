@@ -7,32 +7,14 @@ const zglfw = @import("zglfw");
 const LanguageRepo = @import("../repo/language_repo.zig");
 const ConfigRepo = @import("../repo/config_repo.zig");
 const GameRepo = @import("../repo/game_repo.zig");
+const Game = @import("../data/game.zig");
+const ControllerMap = @import("../nes/control.zig").ControllerMap;
 
 const MainMenu = @import("main_menu.zig");
 const ConfigMenu = @import("config_menu.zig");
 const MenuBar = @import("menu_bar.zig");
 const About = @import("about.zig");
-
-const MenusToggle = struct {
-    config_menu: bool = false,
-    about: bool = false,
-};
-
-const ScreenTag = enum {
-    MenuScreen,
-    GameScreen,
-};
-
-const Screen = union(ScreenTag) {
-    MenuScreen: ?*MainMenu,
-    GameScreen: ?*void,
-};
-
-const Signal = enum {
-    None,
-    Exit,
-    Restart,
-};
+const Nes = @import("../nes/nes.zig");
 
 pub fn ui_main(
     allocator: std.mem.Allocator,
@@ -89,30 +71,24 @@ pub fn ui_main(
     // try nes.startup(APU{});
 
     var current_screen = Screen{ .MenuScreen = null };
-    defer {
-        switch (current_screen) {
-            .MenuScreen => |main_menu_state| {
-                if (main_menu_state) |mmt| {
-                    mmt.deinit();
-                    allocator.destroy(mmt);
-                }
-            },
-            .GameScreen => {},
-        }
-    }
-    var game_path = std.ArrayList(u8).init(allocator);
-    defer game_path.deinit();
+    defer current_screen.deinit(allocator);
+    var game_pause = false;
+    var full_screen = false;
+    var current_game: ?Game = null;
     var menus_toggle = MenusToggle{};
+    var config_menu_state: ?*ConfigMenu = null;
     var signal: Signal = .None;
+    var screen_rect = getWindowRect(window);
 
     var openGameContext = OpenGameContext{
         .current_screen = &current_screen,
-        .game_path = &game_path,
+        .current_game = &current_game,
         .allocator = &allocator,
     };
-    var apply_config_context = ApplyConfigContext{ .signal = &signal };
 
-    var config_menu_state: ?*ConfigMenu = null;
+    var apply_config_context = ApplyConfigContext{
+        .signal = &signal,
+    };
 
     // const frame_deadline = @as(f64, 1) / 60;
     // var frame_accumulated: f64 = 0;
@@ -153,12 +129,53 @@ pub fn ui_main(
             });
             defer zgui.popStyleVar(.{});
 
-            switch (MenuBar.drawMenuBar(strings.*, .{
-                .in_game = false,
-                .is_pause = false,
-            })) {
+            switch (MenuBar.drawMenuBar(
+                window,
+                strings.*,
+                current_screen == .GameScreen,
+                game_pause,
+                full_screen,
+            )) {
                 .Exit => signal = .Exit,
                 .OpenConfig => menus_toggle.config_menu = true,
+                .Stop => {
+                    current_screen.deinit(allocator);
+                    current_screen = .{ .MenuScreen = null };
+                },
+                .FullScreen => {
+                    std.log.debug("Fullscreened", .{});
+                    full_screen = !full_screen;
+                    var tmp = std.mem.zeroes(zglfw.VideoMode);
+                    tmp.refresh_rate = 60;
+                    tmp.height = 600;
+                    tmp.width = 800;
+                    const primary_monitor = zglfw.Monitor.getPrimary();
+                    const video_mode = if (primary_monitor) |monitor|
+                        try monitor.getVideoMode()
+                    else
+                        &tmp;
+                    if (full_screen) {
+                        screen_rect = getWindowRect(window);
+                        window.setMonitor(
+                            primary_monitor,
+                            0,
+                            0,
+                            video_mode.width,
+                            video_mode.height,
+                            video_mode.refresh_rate,
+                        );
+                    } else {
+                        window.setMonitor(
+                            primary_monitor,
+                            screen_rect.x,
+                            screen_rect.y,
+                            screen_rect.w,
+                            screen_rect.h,
+                            video_mode.refresh_rate,
+                        );
+                    }
+                },
+                .PauseContinue => game_pause = !game_pause,
                 .About => menus_toggle.about = true,
                 .None => {},
                 else => {},
@@ -191,12 +208,16 @@ pub fn ui_main(
                     config_menu_state = null;
                 }
             }
-            About.drawAbout(&menus_toggle.about, strings.*);
+
+            if (menus_toggle.about) {
+                About.drawAbout(&menus_toggle.about, strings.*);
+            }
 
             if (config.general.show_metric) {
                 zgui.showMetricsWindow(&config.general.show_metric);
             }
 
+            std.log.info("Current screen: {}", .{current_screen == .GameScreen});
             switch (current_screen) {
                 .MenuScreen => |main_menu_state_| {
                     if (main_menu_state_) |main_menu_state| {
@@ -218,8 +239,17 @@ pub fn ui_main(
                         current_screen = Screen{ .MenuScreen = main_menu_state };
                     }
                 },
-                .GameScreen => {
-                    signal = .Restart;
+                .GameScreen => |nes_state| {
+                    if (nes_state) |nes| {
+                        _ = try nes.runFrame();
+                    } else {
+                        const nes = try allocator.create(Nes);
+                        const rom_file = try std.fs.cwd().openFile(current_game.?.path, .{ .mode = .read_only });
+                        nes.* = try Nes.init(allocator, gctx, rom_file, [_]ControllerMap{
+                            config.game.controller1_map,
+                            config.game.controller2_map,
+                        });
+                    }
                 },
             }
 
@@ -259,19 +289,59 @@ pub fn ui_main(
     return signal;
 }
 
+const MenusToggle = struct {
+    config_menu: bool = false,
+    about: bool = false,
+};
+
+const ScreenTag = enum {
+    MenuScreen,
+    GameScreen,
+};
+
+const Screen = union(ScreenTag) {
+    MenuScreen: ?*MainMenu,
+    GameScreen: ?*Nes,
+
+    pub fn deinit(self: *Screen, allocator: std.mem.Allocator) void {
+        switch (self.*) {
+            .MenuScreen => |main_menu_state| {
+                if (main_menu_state) |mmt| {
+                    mmt.deinit();
+                    allocator.destroy(mmt);
+                }
+                self.MenuScreen = null;
+            },
+            .GameScreen => |nes_state| {
+                if (nes_state) |nes| {
+                    nes.deinit();
+                    allocator.destroy(nes);
+                }
+                self.GameScreen = null;
+            },
+        }
+    }
+};
+
+const Signal = enum {
+    None,
+    Exit,
+    Restart,
+};
+
 const OpenGameContext = struct {
     const Self = @This();
     current_screen: *Screen,
-    game_path: *std.ArrayList(u8),
+    current_game: *?Game,
     allocator: *const std.mem.Allocator,
 
-    pub fn openGame(self: *Self, path: []const u8) void {
+    pub fn openGame(self: *Self, game: Game) void {
         self.current_screen.MenuScreen.?.deinit();
         self.allocator.destroy(self.current_screen.MenuScreen.?);
         self.current_screen.* = Screen{ .GameScreen = null };
-        self.game_path.clearRetainingCapacity();
-        self.game_path.appendSlice(path) catch {};
-        std.log.info("Opening: {s}", .{path});
+        self.current_game.* = game;
+        std.log.info("Opening: {s}", .{game.path});
+        std.log.info("Current screen: {}", .{self.current_screen});
     }
 };
 
@@ -283,5 +353,18 @@ const ApplyConfigContext = struct {
         self.signal.* = .Restart;
     }
 };
+
+const Rect = struct {
+    x: i32 = 0,
+    y: i32 = 0,
+    w: i32 = 800,
+    h: i32 = 600,
+};
+
+fn getWindowRect(window: *zglfw.Window) Rect {
+    const pos: @Vector(2, i32) = window.getPos();
+    const size: @Vector(2, i32) = window.getSize();
+    return Rect{ .x = pos[0], .y = pos[1], .w = size[0], .h = size[1] };
+}
 
 // fn tmp() void {}

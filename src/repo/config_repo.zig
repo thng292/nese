@@ -30,7 +30,7 @@ pub fn init(allocator: std.mem.Allocator) !Self {
     const config = if (should_load) blk: {
         const file_content = try cwd.readFileAlloc(allocator, save_file_path, bytes_limit);
         defer allocator.free(file_content);
-        const parsed = try std.json.parseFromSlice(
+        const parsed = std.json.parseFromSlice(
             Config,
             allocator,
             file_content,
@@ -39,7 +39,7 @@ pub fn init(allocator: std.mem.Allocator) !Self {
                 .duplicate_field_behavior = .use_last,
                 .ignore_unknown_fields = true,
             },
-        );
+        ) catch break :blk;
         defer parsed.deinit();
 
         var loaded = parsed.value;

@@ -2,30 +2,24 @@ const std = @import("std");
 const zglfw = @import("zglfw");
 const zgpu = @import("zgpu");
 
-const Bus = @import("bus.zig").Bus;
 const CPU = @import("cpu6502.zig");
+const PPU = @import("ppu2C02.zig");
+const APU = @import("apu2A03.zig");
+const Bus = @import("bus.zig").Bus;
 const Rom = @import("ines.zig").ROM;
 const Ram = @import("ram.zig");
 const Control = @import("control.zig");
-const PPU = @import("ppu2C02.zig");
-const APU = @import("apu2A03.zig");
-
-const Mapper = @import("mapper.zig");
-const Mapper0 = @import("mappers/mapper0.zig");
-const Mapper1 = @import("mappers/mapper1.zig");
-const Mapper2 = @import("mappers/mapper2.zig");
-const Mapper3 = @import("mappers/mapper3.zig");
-const Mapper4 = @import("mappers/mapper4.zig");
+const mapper_helpers = @import("mapper_helpers.zig");
 
 const Nes = @This();
 const dot_per_frame = 341 * 262;
 const channel = 4;
 pub const SCREEN_SIZE = .{ .width = 256, .height = 240 };
 
-rom: Rom = undefined,
 cpu: CPU = undefined,
+rom: Rom = undefined,
 bus: Bus = undefined,
-mapperMem: MapperUnion = undefined,
+mapperMem: mapper_helpers.MapperUnion = undefined,
 counter: u64 = 0,
 gctx: *zgpu.GraphicsContext,
 screen_texture_handle: zgpu.TextureHandle,
@@ -33,7 +27,12 @@ screen_texture_view_handle: zgpu.TextureViewHandle,
 texture_data: []u8,
 allocator: std.mem.Allocator,
 
-pub fn init(allocator: std.mem.Allocator, rom_file: std.fs.File, gctx: *zgpu.GraphicsContext) !Nes {
+pub fn init(
+    allocator: std.mem.Allocator,
+    gctx: *zgpu.GraphicsContext,
+    rom_file: std.fs.File,
+    controllers: [2]Control.ControllerMap,
+) !Nes {
     const texture_handle = gctx.createTexture(.{
         .format = zgpu.imageInfoToTextureFormat(4, 1, false),
         .size = .{
@@ -47,7 +46,7 @@ pub fn init(allocator: std.mem.Allocator, rom_file: std.fs.File, gctx: *zgpu.Gra
     const texture_view = gctx.createTextureView(texture_handle, .{});
     std.log.info("Created screen texture\n", .{});
 
-    return Nes{
+    var result = Nes{
         .allocator = allocator,
         .rom = try Rom.readFromFile(rom_file, allocator),
         .gctx = gctx,
@@ -55,6 +54,8 @@ pub fn init(allocator: std.mem.Allocator, rom_file: std.fs.File, gctx: *zgpu.Gra
         .screen_texture_view_handle = texture_view,
         .texture_data = try allocator.alloc(u8, SCREEN_SIZE.width * SCREEN_SIZE.height * channel),
     };
+    try result.startup(controllers);
+    return result;
 }
 
 pub fn deinit(self: *Nes) void {
@@ -63,26 +64,21 @@ pub fn deinit(self: *Nes) void {
     self.gctx.destroyResource(self.screen_texture_handle);
 }
 
-pub fn startup(self: *Nes, apu: APU) !void {
+fn startup(
+    self: *Nes,
+    controllers: [2]Control.ControllerMap,
+) !void {
     std.log.info("ROM Info: {}\n", .{self.rom.header});
-    const mapper = try self.createMapper();
+    const mapper = try mapper_helpers.createMapper(self.rom.header.getMapperID(), &self.mapperMem, &self.rom);
     self.bus = Bus{
         .mapper = mapper,
         .ram = Ram{},
         .ppu = try PPU.init(mapper),
         .control = Control{
-            .controller2 = .{ .map = .{
-                .Up = .up,
-                .Down = .down,
-                .Left = .left,
-                .Right = .right,
-                .A = .j,
-                .B = .k,
-                .Start = .slash,
-                .Select = .l,
-            } },
+            .controller1 = Control.ControllerState{ .map = controllers[0] },
+            .controller2 = Control.ControllerState{ .map = controllers[1] },
         },
-        .apu = apu,
+        .apu = APU{},
     };
     self.cpu = CPU{
         .bus = &self.bus,
@@ -133,52 +129,3 @@ pub fn runFrame(self: *Nes) !zgpu.wgpu.TextureView {
 //     defer game_screen.unlock();
 //     self.bus.ppu.draw_chr(data.pixels);
 // }
-
-const MapperTag = enum(u8) {
-    mapper0,
-    mapper1,
-    mapper2,
-    mapper3,
-    mapper4,
-    _,
-};
-
-const MapperUnion = union(MapperTag) {
-    mapper0: Mapper0,
-    mapper1: Mapper1,
-    mapper2: Mapper2,
-    mapper3: Mapper3,
-    mapper4: Mapper4,
-};
-
-const CrateMapperError = error{
-    MapperNotSupported,
-};
-
-fn createMapper(self: *Nes) !Mapper {
-    switch (self.rom.header.getMapperID()) {
-        0 => {
-            self.mapperMem = MapperUnion{ .mapper0 = Mapper0.init(&self.rom) };
-            return self.mapperMem.mapper0.toMapper();
-        },
-        1 => {
-            self.mapperMem = MapperUnion{ .mapper1 = Mapper1.init(&self.rom) };
-            return self.mapperMem.mapper1.toMapper();
-        },
-        2 => {
-            self.mapperMem = MapperUnion{ .mapper2 = Mapper2.init(&self.rom) };
-            return self.mapperMem.mapper2.toMapper();
-        },
-        3 => {
-            self.mapperMem = MapperUnion{ .mapper3 = Mapper3.init(&self.rom) };
-            return self.mapperMem.mapper3.toMapper();
-        },
-        4 => {
-            self.mapperMem = MapperUnion{ .mapper4 = Mapper4.init(&self.rom) };
-            return self.mapperMem.mapper4.toMapper();
-        },
-        else => {
-            return CrateMapperError.MapperNotSupported;
-        },
-    }
-}

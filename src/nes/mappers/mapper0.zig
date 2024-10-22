@@ -1,5 +1,5 @@
 const std = @import("std");
-const mapperInterface = @import("../mapper.zig");
+const mapperInterface = @import("mapper_interface.zig");
 const ROM = @import("../ines.zig").ROM;
 
 const Self = @This();

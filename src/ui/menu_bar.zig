@@ -1,5 +1,6 @@
 const std = @import("std");
 const zgui = @import("zgui");
+const zglfw = @import("zglfw");
 
 const Strings = @import("../data/i18n.zig");
 
@@ -15,12 +16,14 @@ const MenuAction = enum {
     About,
 };
 
-pub fn drawMenuBar(strings: Strings, args: packed struct(u8) {
+pub fn drawMenuBar(
+    window: *zglfw.Window,
+    strings: Strings,
     in_game: bool,
     is_pause: bool,
-    _padding: u6 = 0,
-}) MenuAction {
-    if (zgui.beginMainMenuBar()) {
+    full_screen: bool,
+) MenuAction {
+    if (!full_screen and zgui.beginMainMenuBar()) {
         defer zgui.endMainMenuBar();
         if (zgui.beginMenu(strings.main_menu_bar.file, true)) {
             defer zgui.endMenu();
@@ -34,23 +37,23 @@ pub fn drawMenuBar(strings: Strings, args: packed struct(u8) {
         if (zgui.beginMenu(strings.main_menu_bar.emulation, true)) {
             defer zgui.endMenu();
             if (zgui.menuItem(
-                if (args.is_pause)
+                if (is_pause)
                     strings.emulation_menu_items.@"continue"
                 else
                     strings.emulation_menu_items.pause,
-                .{ .enabled = args.in_game, .shortcut = "F5" },
+                .{ .enabled = in_game, .shortcut = "F5" },
             )) {
                 return .PauseContinue;
             }
             if (zgui.menuItem(
                 strings.emulation_menu_items.stop,
-                .{ .enabled = args.in_game, .shortcut = "F6" },
+                .{ .enabled = in_game, .shortcut = "F6" },
             )) {
                 return .Stop;
             }
             if (zgui.menuItem(
                 strings.emulation_menu_items.take_snapshot,
-                .{ .enabled = args.in_game, .shortcut = "F7" },
+                .{ .enabled = in_game, .shortcut = "F7" },
             )) {
                 return .TakeSnapshot;
             }
@@ -64,24 +67,22 @@ pub fn drawMenuBar(strings: Strings, args: packed struct(u8) {
                 return .OpenConfig;
             }
         }
-        if (zgui.beginMenu(strings.main_menu_bar.help, true)) {
+        if (zgui.beginMenu(strings.help_menu_items.about, true)) {
             defer zgui.endMenu();
-            if (zgui.menuItem(strings.help_menu_items.about, .{})) {
-                return .About;
-            }
+            return .About;
         }
     }
 
-    if (zgui.isKeyDown(.f11)) {
+    if (window.getKey(.F11) == .press) {
         return .FullScreen;
     }
-    if (zgui.isKeyDown(.f5)) {
+    if (window.getKey(.F5) == .press) {
         return .PauseContinue;
     }
-    if (zgui.isKeyDown(.f6)) {
+    if (window.getKey(.F6) == .press) {
         return .Stop;
     }
-    if (zgui.isKeyDown(.f7)) {
+    if (window.getKey(.F7) == .press) {
         return .OpenConfig;
     }
     return .None;

@@ -7,6 +7,7 @@ pub fn Range(comptime T: type) type {
 
 pub fn centeredTextSamelineWidget(style: *const zgui.Style, text: []const u8) void {
     const initial_cursor_pos: @Vector(2, f32) = zgui.getCursorPos();
+    // std.log.info("0x{X}", .{@intFromPtr(style)});
     const pad: @Vector(2, f32) = style.frame_padding;
 
     zgui.setCursorPos(initial_cursor_pos + pad);

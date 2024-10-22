@@ -134,10 +134,14 @@ pub fn draw(self: *Self, strings: Strings) !void {
             defer zgui.popStyleVar(.{});
 
             for (self.game_repo.getGames(), 0..) |game, i| {
-                try self.drawGameRow(game, i, mouse_pos, self.style);
+                if (try self.drawGameRow(game, i, mouse_pos, self.style)) {
+                    return self.open_game_callback.call(.{self.game_repo.getGames()[self.hovering]});
+                }
             }
 
-            self.drawContextMenu(strings);
+            if (self.drawContextMenu(strings)) {
+                return self.open_game_callback.call(.{self.game_repo.getGames()[self.hovering]});
+            }
             self.change_path_popup.draw(strings);
             if (self.open_control_config) {
                 const current_selected_game = &self.game_repo.games_list.items[self.changing].controller_map;
@@ -172,7 +176,7 @@ inline fn drawGameRow(
     i: usize,
     mouse_pos: [2]f32,
     style: *const zgui.Style,
-) !void {
+) !bool {
     zgui.tableNextRow(.{});
     var row_height: f32 = 0;
 
@@ -253,7 +257,7 @@ inline fn drawGameRow(
     }
 
     if (hovered and zgui.isMouseDoubleClicked(.left)) {
-        self.open_game_callback.call(.{game.path});
+        return true;
     }
 
     if (hovered and zgui.isMouseClicked(.right)) {
@@ -271,15 +275,16 @@ inline fn drawGameRow(
             ),
         });
     }
+    return false;
 }
 
-inline fn drawContextMenu(self: *Self, strings: Strings) void {
+inline fn drawContextMenu(self: *Self, strings: Strings) bool {
     var should_popup_change_path = false;
     var should_popup_change_ctrl = false;
     if (zgui.beginPopup(context_menu_id, .{})) {
         defer zgui.endPopup();
         if (zgui.menuItem(strings.main_menu_context_menu.open, .{})) {
-            self.open_game_callback.call(.{self.game_repo.getGames()[self.hovering].path});
+            return true;
         }
         if (zgui.menuItem(strings.main_menu_context_menu.remove, .{})) {
             self.game_repo.removeGame(self.hovering);
@@ -319,6 +324,7 @@ inline fn drawContextMenu(self: *Self, strings: Strings) void {
     if (should_popup_change_ctrl) {
         zgui.openPopup(strings.config_menu.tab_control, .{});
     }
+    return false;
 }
 
 fn changeGamePath(self_: *anyopaque, path: []u8) !void {
@@ -342,5 +348,5 @@ inline fn drawTableHeader(strings: Strings) void {
 }
 
 const nes_file_extentions = .{".nes"};
-pub const Callback = Callable(fn (file_path: []const u8) void);
+pub const Callback = Callable(fn (game: Game) void);
 const context_menu_id = "MainMenu_ContextMenu";

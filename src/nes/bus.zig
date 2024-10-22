@@ -1,5 +1,5 @@
 const std = @import("std");
-const Mapper = @import("mapper.zig");
+const Mapper = @import("mappers/mapper_interface.zig");
 const Ram = @import("ram.zig");
 const PPU = @import("ppu2C02.zig");
 const Control = @import("control.zig");
